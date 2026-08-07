@@ -99,16 +99,42 @@
             <label><input type="radio" name="gen-mode" value="premium" /> پریمیوم (مالیات + ضد نهنگ)</label>
           </div>
         </div>
-        <div id="gen-premium-fields" class="form-grid hidden">
-          <label>مالیات هر انتقال (٪)
-            <input id="gen-tax" type="number" min="0" max="25" value="5" />
-          </label>
-          <label>سوزاندن از مالیات (٪)
-            <input id="gen-burn" type="number" min="0" max="100" value="30" />
-          </label>
-          <label>سقف نگهداری نهنگ (٪) — ۰ = خاموش
-            <input id="gen-whale" type="number" min="0" value="2" />
-          </label>
+        <div id="gen-premium-fields" class="hidden">
+          <div class="form-grid">
+            <label>مالیات هر انتقال (٪)
+              <input id="gen-tax" type="number" min="0" max="25" value="5" />
+            </label>
+            <label>سوزاندن از مالیات (٪)
+              <input id="gen-burn" type="number" min="0" max="100" value="30" />
+            </label>
+            <label>سقف نگهداری نهنگ (٪) — ۰ = خاموش
+              <input id="gen-whale" type="number" min="0" value="2" />
+            </label>
+            <label>سقف هر تراکنش (٪ از عرضه) — ۰ = بدون محدودیت
+              <input id="gen-maxtx" type="number" min="0" max="10000" value="0" />
+            </label>
+          </div>
+          <div class="custom-title">قابلیت‌های سفارشی:</div>
+          <div class="check-row">
+            <label><input type="checkbox" id="gen-whitelist" /> وایت‌لیست (فقط آدرس‌های تأییدشده بتوانند منتقل کنند — مناسب پیش‌فروش)</label>
+          </div>
+          <div class="check-row">
+            <label><input type="checkbox" id="gen-buysell" /> مالیات جدا برای خرید و فروش (نیاز به آدرس صرافی/پیر دارد)</label>
+          </div>
+          <div id="gen-buysell-fields" class="form-grid hidden">
+            <label>مالیات خرید (٪)
+              <input id="gen-buytax" type="number" min="0" max="25" value="3" />
+            </label>
+            <label>مالیات فروش (٪)
+              <input id="gen-selltax" type="number" min="0" max="25" value="8" />
+            </label>
+          </div>
+          <div class="check-row">
+            <label><input type="checkbox" id="gen-pausable" /> Pausable (مالک بتواند تراکنش‌ها را موقتاً متوقف کند)</label>
+          </div>
+          <div class="check-row">
+            <label><input type="checkbox" id="gen-blacklist" /> Blacklist (مالک بتواند آدرس‌های خاص را مسدود کند)</label>
+          </div>
         </div>
         <div id="gen-status" class="gen-status"></div>
         <p class="gen-note">مالک همیشه از مالیات و سقف نهنگ معاف است. عرضه اولیه خودکار ×10^18 می‌شود.</p>

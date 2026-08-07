@@ -194,11 +194,16 @@ const TEMPLATE_PREMIUM = `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 /**
- * @title  PremiumToken - Premium ERC-20 with tax, auto-burn, anti-whale
+ * @title  PremiumToken - Premium ERC-20 with tax, auto-burn, anti-whale + custom features
  * @notice Standalone ERC-20 (no imports) with advanced sellable features:
  *         - Transfer tax (basis points) collected on every taxable transfer
+ *         - Optional separate Buy / Sell tax (requires a pair address)
  *         - Auto-burn: a share of the collected tax is permanently burned
  *         - Anti-whale: configurable max holding percentage per wallet
+ *         - Max-tx: configurable max amount per transfer
+ *         - Whitelist mode: only approved addresses can transfer
+ *         - Pausable: owner can pause/unpause all transfers
+ *         - Blacklist: owner can block specific addresses
  *         - Tax exclusions (exchanges, liquidity, deployer)
  *         - Owner toggle to enable/disable the whole tax system
  *         - Classic mint / burn / investor lock / ownership transfer
@@ -224,13 +229,29 @@ contract PremiumToken {
     uint256 public burnShare;          // percent of tax that is burned: 30 = 30%
     bool    public taxEnabled = true;
 
-    // -------- ANTI-WHALE --------
+    // -------- BUY/SELL TAX (optional, requires pair) --------
+    address public pair;               // AMM pair address; address(0) = disabled
+    uint256 public buyTax;             // basis points applied when from == pair
+    uint256 public sellTax;            // basis points applied when to == pair
+
+    // -------- ANTI-WHALE / MAX-TX --------
     uint256 public maxWalletPercent;   // percent of supply: 200 = 2%
     bool    public antiWhaleEnabled = true;
+    uint256 public maxTxPercent;       // percent of supply per transfer: 0 = unlimited
+
+    // -------- WHITELIST --------
+    bool    public whitelistEnabled;
+    mapping(address => bool) public isWhitelisted;
+
+    // -------- PAUSE --------
+    bool    public paused;
+
+    // -------- BLACKLIST --------
+    mapping(address => bool) public isBlacklisted;
 
     // -------- EXCLUSIONS --------
     mapping(address => bool) public isTaxExcluded;      // no tax on transfers from/to
-    mapping(address => bool) public isWhaleExempt;      // can hold more than cap
+    mapping(address => bool) public isWhaleExempt;      // can hold more than cap / bypass whitelist
 
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed tokenOwner, address indexed spender, uint256 value);
@@ -239,9 +260,16 @@ contract PremiumToken {
     event Lock(address indexed holder, uint256 until);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event TaxChanged(uint256 transferTax, uint256 burnShare);
+    event BuySellTaxChanged(uint256 buyTax, uint256 sellTax);
     event MarketingWalletChanged(address indexed wallet);
     event TaxToggled(bool enabled);
+    event PairChanged(address indexed pair);
     event AntiWhaleChanged(uint256 maxWalletPercent, bool enabled);
+    event MaxTxChanged(uint256 maxTxPercent);
+    event WhitelistToggled(bool enabled);
+    event Whitelisted(address indexed account, bool state);
+    event Paused(bool state);
+    event Blacklisted(address indexed account, bool state);
     event Excluded(address indexed account, bool state);
 
     modifier onlyOwner() {
@@ -267,6 +295,11 @@ contract PremiumToken {
 
     function maxWalletAmount() public view returns (uint256) {
         return (totalSupply * maxWalletPercent) / 10000;
+    }
+
+    function maxTxAmount() public view returns (uint256) {
+        if (maxTxPercent == 0) return type(uint256).max;
+        return (totalSupply * maxTxPercent) / 10000;
     }
 
     /* ============ ERC-20 TRANSFER ============ */
@@ -362,6 +395,14 @@ contract PremiumToken {
         emit TaxChanged(_transferTax, _burnShare);
     }
 
+    function setBuySellTax(uint256 _buyTax, uint256 _sellTax) public onlyOwner {
+        require(_buyTax <= 2500, "Buy tax max 25%");
+        require(_sellTax <= 2500, "Sell tax max 25%");
+        buyTax = _buyTax;
+        sellTax = _sellTax;
+        emit BuySellTaxChanged(_buyTax, _sellTax);
+    }
+
     function setMarketingWallet(address wallet) public onlyOwner {
         require(wallet != address(0), "Wallet zero");
         marketingWallet = wallet;
@@ -378,7 +419,14 @@ contract PremiumToken {
         emit Excluded(account, state);
     }
 
-    /* ============ ADMIN: ANTI-WHALE ============ */
+    /* ============ ADMIN: PAIR (buy/sell tax) ============ */
+
+    function setPair(address _pair) public onlyOwner {
+        pair = _pair;
+        emit PairChanged(_pair);
+    }
+
+    /* ============ ADMIN: ANTI-WHALE / MAX-TX ============ */
 
     function setAntiWhale(uint256 _maxWalletPercent, bool _enabled) public onlyOwner {
         require(_maxWalletPercent >= 1, "Min 0.01%");
@@ -389,6 +437,38 @@ contract PremiumToken {
 
     function setWhaleExempt(address account, bool state) public onlyOwner {
         isWhaleExempt[account] = state;
+    }
+
+    function setMaxTx(uint256 _maxTxPercent) public onlyOwner {
+        require(_maxTxPercent <= 10000, "Max 100%");
+        maxTxPercent = _maxTxPercent;
+        emit MaxTxChanged(_maxTxPercent);
+    }
+
+    /* ============ ADMIN: WHITELIST ============ */
+
+    function setWhitelistEnabled(bool state) public onlyOwner {
+        whitelistEnabled = state;
+        emit WhitelistToggled(state);
+    }
+
+    function setWhitelisted(address account, bool state) public onlyOwner {
+        isWhitelisted[account] = state;
+        emit Whitelisted(account, state);
+    }
+
+    /* ============ ADMIN: PAUSE ============ */
+
+    function setPaused(bool state) public onlyOwner {
+        paused = state;
+        emit Paused(state);
+    }
+
+    /* ============ ADMIN: BLACKLIST ============ */
+
+    function setBlacklisted(address account, bool state) public onlyOwner {
+        isBlacklisted[account] = state;
+        emit Blacklisted(account, state);
     }
 
     /* ============ INTERNAL ============ */
@@ -412,9 +492,17 @@ contract PremiumToken {
         emit Burn(from, amount);
     }
 
+    function _resolveTax(address from, address to) internal view returns (uint256) {
+        if (pair == address(0)) return transferTax;
+        if (to == pair) return sellTax > 0 ? sellTax : transferTax;
+        if (from == pair) return buyTax > 0 ? buyTax : transferTax;
+        return transferTax;
+    }
+
     function _checkMaxWallet(address to, uint256 amount) internal view {
         if (!antiWhaleEnabled) return;
         if (isWhaleExempt[to]) return;
+        if (to == pair) return;
         require(_balances[to] + amount <= maxWalletAmount(), "Max wallet exceeded");
     }
 
@@ -422,17 +510,28 @@ contract PremiumToken {
         require(from != address(0), "Transfer from zero");
         require(to != address(0), "Transfer to zero");
         require(amount > 0, "Transfer zero");
+        require(!paused, "Transfers paused");
+        require(!isBlacklisted[from] && !isBlacklisted[to], "Blacklisted");
         require(_balances[from] >= amount, "Insufficient balance");
         require(!isLocked(from), "Tokens locked");
+
+        if (whitelistEnabled) {
+            require(isWhaleExempt[from] || isWhitelisted[from] || from == owner || from == pair, "Sender not whitelisted");
+            require(from == owner || isWhaleExempt[to] || isWhitelisted[to] || to == owner || to == pair, "Receiver not whitelisted");
+        }
+
+        if (maxTxPercent > 0) {
+            require(amount <= maxTxAmount(), "Max tx exceeded");
+        }
 
         _checkMaxWallet(to, amount);
 
         bool applyTax = taxEnabled
             && !isTaxExcluded[from]
-            && !isTaxExcluded[to]
-            && transferTax > 0;
+            && !isTaxExcluded[to];
 
-        uint256 taxAmount = applyTax ? (amount * transferTax) / 10000 : 0;
+        uint256 taxRate = applyTax ? _resolveTax(from, to) : 0;
+        uint256 taxAmount = (amount * taxRate) / 10000;
         uint256 burnPart = (taxAmount * burnShare) / 100;
         uint256 feeToWallet = taxAmount - burnPart;
         uint256 amountOut = amount - taxAmount;
@@ -451,7 +550,8 @@ contract PremiumToken {
         emit Transfer(from, to, amountOut);
         if (feeToWallet > 0) emit Transfer(from, marketingWallet, feeToWallet);
     }
-}`;
+}
+`;
 
 // ---------- helpers ----------
 
@@ -492,6 +592,8 @@ function buildToken(opts) {
     const taxBp = opts.tax === 0 ? '0' : String(opts.tax * 100);
     const whaleBp = opts.whale === 0 ? '0' : String(opts.whale * 100);
     const antiWhale = opts.whale === 0 ? 'false' : 'true';
+    const buyBp = opts.buysell ? String(opts.buytax * 100) : '0';
+    const sellBp = opts.buysell ? String(opts.selltax * 100) : '0';
     ctor = [
       '    constructor() {',
       '        name            = "' + cleanQuotes(opts.name) + '";',
@@ -501,6 +603,10 @@ function buildToken(opts) {
       '        transferTax     = ' + taxBp + ';',
       '        burnShare       = ' + opts.burn + ';',
       '        maxWalletPercent= ' + whaleBp + ';',
+      '        buyTax          = ' + buyBp + ';',
+      '        sellTax         = ' + sellBp + ';',
+      '        maxTxPercent    = ' + (opts.maxTx * 100) + ';',
+      '        whitelistEnabled= ' + (opts.whitelist ? 'true' : 'false') + ';',
       '        taxEnabled      = true;',
       '        antiWhaleEnabled= ' + antiWhale + ';',
       '        isTaxExcluded[' + ownerE + '] = true;',
@@ -523,6 +629,23 @@ function buildToken(opts) {
     throw new Error('قالب قرارداد خراب است (مارکر constructor پیدا نشد).');
   }
   src = src.replace(marker, ctor);
+
+  // بنر قابلیت‌های سفارشی (فقط پریمیوم)
+  if (isPremium) {
+    const feat = [];
+    if (opts.whitelist) feat.push('whitelist/presale');
+    if (opts.buysell) feat.push('buy/sell tax');
+    if (opts.maxTx > 0) feat.push('max-tx');
+    if (opts.pausable) feat.push('pausable');
+    if (opts.blacklist) feat.push('blacklist');
+    if (feat.length) {
+      src = src.replace(
+        'pragma solidity ^0.8.20;',
+        'pragma solidity ^0.8.20;\n\n// CUSTOM FEATURES: ' + feat.join(', ')
+      );
+    }
+  }
+
   return { src: src, fileName: contractName + '.sol' };
 }
 
@@ -556,6 +679,13 @@ function readOpts() {
   const tax = parseInt(document.getElementById('gen-tax').value, 10);
   const burn = parseInt(document.getElementById('gen-burn').value, 10);
   const whale = parseInt(document.getElementById('gen-whale').value, 10);
+  const maxTx = parseInt(document.getElementById('gen-maxtx').value, 10);
+  const whitelist = document.getElementById('gen-whitelist').checked;
+  const buysell = document.getElementById('gen-buysell').checked;
+  const buytax = parseInt(document.getElementById('gen-buytax').value, 10);
+  const selltax = parseInt(document.getElementById('gen-selltax').value, 10);
+  const pausable = document.getElementById('gen-pausable').checked;
+  const blacklist = document.getElementById('gen-blacklist').checked;
 
   if (!name) { setGenStatus('❌ نام توکن را وارد کن.', 'err'); return null; }
   if (!sanitize(symbol)) { setGenStatus('❌ نماد باید فقط حروف/اعداد انگلیسی باشد.', 'err'); return null; }
@@ -565,8 +695,17 @@ function readOpts() {
     if (isNaN(tax) || tax < 0 || tax > 25) { setGenStatus('❌ مالیات باید بین ۰ تا ۲۵٪ باشد.', 'err'); return null; }
     if (isNaN(burn) || burn < 0 || burn > 100) { setGenStatus('❌ سوزاندن باید بین ۰ تا ۱۰۰٪ باشد.', 'err'); return null; }
     if (isNaN(whale) || whale < 0) { setGenStatus('❌ سقف نهنگ باید عدد مثبت باشد (۰ = غیرفعال).', 'err'); return null; }
+    if (isNaN(maxTx) || maxTx < 0 || maxTx > 100) { setGenStatus('❌ سقف هر تراکنش باید بین ۰ تا ۱۰۰٪ باشد.', 'err'); return null; }
+    if (buysell && (isNaN(buytax) || isNaN(selltax) || buytax < 0 || buytax > 25 || selltax < 0 || selltax > 25)) {
+      setGenStatus('❌ مالیات خرید/فروش باید بین ۰ تا ۲۵٪ باشد.', 'err'); return null;
+    }
   }
-  return { name: cleanQuotes(name), symbol: cleanQuotes(symbol), supply: supply, owner: owner, mode: mode, tax: tax || 0, burn: burn || 0, whale: whale || 0 };
+  return {
+    name: cleanQuotes(name), symbol: cleanQuotes(symbol), supply: supply, owner: owner, mode: mode,
+    tax: tax || 0, burn: burn || 0, whale: whale || 0,
+    maxTx: maxTx || 0, whitelist: whitelist, buysell: buysell, buytax: buytax || 0, selltax: selltax || 0,
+    pausable: pausable, blacklist: blacklist
+  };
 }
 
 function doGenerate() {
@@ -624,6 +763,8 @@ function setupGenerator() {
   const dlToolbar = document.getElementById('btn-download');
   const modeInputs = document.querySelectorAll('input[name="gen-mode"]');
   const premiumFields = document.getElementById('gen-premium-fields');
+  const buysellChk = document.getElementById('gen-buysell');
+  const buysellFields = document.getElementById('gen-buysell-fields');
 
   function openModal() {
     modal.classList.remove('hidden');
@@ -636,6 +777,7 @@ function setupGenerator() {
   function onMode() {
     const val = document.querySelector('input[name="gen-mode"]:checked').value;
     premiumFields.classList.toggle('hidden', val !== 'premium');
+    buysellFields.classList.toggle('hidden', !(val === 'premium' && buysellChk.checked));
   }
 
   openBtn.addEventListener('click', openModal);
@@ -648,6 +790,7 @@ function setupGenerator() {
     if (activeFile) downloadFile(activeFile, files[activeFile]);
   });
   modeInputs.forEach(function (r) { r.addEventListener('change', onMode); });
+  buysellChk.addEventListener('change', onMode);
   onMode();
 }
 

@@ -37,6 +37,8 @@
           <label id="opt-label">
             <input type="checkbox" id="chk-optimize" /> Optimize
           </label>
+          <button id="btn-generator">🧾 توکن ساز</button>
+          <button id="btn-download">⬇️ دانلود .sol</button>
           <button id="btn-compile">Compile</button>
         </div>
       </header>
@@ -66,8 +68,62 @@
     </main>
   </div>
 
+  <!-- ============ توکن ساز (Modal) ============ -->
+  <div id="gen-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>🧾 توکن ساز — ساخت قرارداد بدون کدنویسی</h2>
+        <button id="gen-close" class="modal-x">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <label>نام توکن
+            <input id="gen-name" placeholder="مثلاً Gold Token" />
+          </label>
+          <label>نماد
+            <input id="gen-symbol" placeholder="مثلاً GLD" />
+          </label>
+        </div>
+        <div class="form-grid">
+          <label>عرضه اولیه
+            <input id="gen-supply" type="number" min="0" value="1000000" />
+          </label>
+          <label>آدرس مالک (خالی = کیف deployer)
+            <input id="gen-owner" placeholder="0x..." />
+          </label>
+        </div>
+        <div class="form-grid">
+          <span class="mode-label">حالت قرارداد:</span>
+          <div class="radio-row">
+            <label><input type="radio" name="gen-mode" value="base" checked /> پایه (Mint/Burn/Lock)</label>
+            <label><input type="radio" name="gen-mode" value="premium" /> پریمیوم (مالیات + ضد نهنگ)</label>
+          </div>
+        </div>
+        <div id="gen-premium-fields" class="form-grid hidden">
+          <label>مالیات هر انتقال (٪)
+            <input id="gen-tax" type="number" min="0" max="25" value="5" />
+          </label>
+          <label>سوزاندن از مالیات (٪)
+            <input id="gen-burn" type="number" min="0" max="100" value="30" />
+          </label>
+          <label>سقف نگهداری نهنگ (٪) — ۰ = خاموش
+            <input id="gen-whale" type="number" min="0" value="2" />
+          </label>
+        </div>
+        <div id="gen-status" class="gen-status"></div>
+        <p class="gen-note">مالک همیشه از مالیات و سقف نهنگ معاف است. عرضه اولیه خودکار ×10^18 می‌شود.</p>
+      </div>
+      <div class="modal-foot">
+        <button id="gen-build" class="btn-primary">⚙️ ساخت توکن</button>
+        <button id="gen-download" class="btn-secondary hidden">⬇️ دانلود فایل .sol</button>
+        <button id="gen-close2" class="btn-secondary">بستن</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+  <script src="generator.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

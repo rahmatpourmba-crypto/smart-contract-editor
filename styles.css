@@ -614,3 +614,58 @@ p.muted { color: var(--muted); }
   border-radius: 6px;
   padding: 8px 10px;
 }
+
+.sec-verdict {
+  margin: 10px 0 4px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-light);
+}
+
+.sec-f-exploit {
+  margin-top: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #fcd49b;
+  background: rgba(252, 212, 155, 0.08);
+  border-left: 3px solid #e5a158;
+  border-radius: 4px;
+}
+
+.sec-playbook {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-light);
+}
+
+.sec-playbook summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent2);
+  user-select: none;
+}
+
+.sec-playbook-list {
+  margin: 0;
+  padding: 0 16px 10px 32px;
+  font-size: 12.5px;
+  line-height: 1.9;
+}
+
+.sec-playbook-list li { margin-bottom: 6px; }
+
+.sec-playbook-tip {
+  margin: 0 12px 12px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--success);
+  background: rgba(166, 227, 161, 0.08);
+  border-radius: 6px;
+}

@@ -128,6 +128,7 @@
     h('<span class="sec-dur">' + rep.durationMs + 'ms</span>');
     h('</span>');
     h('</div>');
+    if (rep.verdict) h('<div class="sec-verdict">' + escapeHtml(rep.verdict) + '</div>');
 
     if (rep.compileError) {
       h('<div class="sec-compile-err">⚠ کامپایل ناقص بود — فقط تحلیل استاتیک نمایش داده می‌شود.<br><code>' + escapeHtml(rep.compileError) + '</code></div>');
@@ -150,6 +151,7 @@
         h('<span class="sec-f-kind">' + (isDyn ? 'پویا (EVM)' : 'استاتیک' + (f.line ? ' — خط ' + f.line : '')) + '</span>');
         h('</div>');
         h('<div class="sec-f-detail">' + escapeHtml(f.detail) + '</div>');
+        if (f.exploit) h('<div class="sec-f-exploit">🚨 بهره‌برداری / PoC: ' + escapeHtml(f.exploit) + '</div>');
         if (f.fix) h('<div class="sec-f-fix">🛠 راه‌حل: ' + escapeHtml(f.fix) + '</div>');
         h('</div>');
       });

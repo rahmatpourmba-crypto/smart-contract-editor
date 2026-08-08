@@ -89,6 +89,25 @@
           <div id="sec-loading" class="muted"></div>
           <div id="sec-report"></div>
 
+          <details class="sec-playbook">
+            <summary>🎯 برنامه حمله — چک‌لیست باگ‌یابی مسابقه (کلیک کن)</summary>
+            <ol class="sec-playbook-list">
+              <li><b>Reentrancy:</b> در توابعِ برداشت/سواپ/خرید، state قبل از تماس خارجی آپدیت می‌شود؟ `nonReentrant` هست؟ با قرارداد fallback دو بار برداشت کن.</li>
+              <li><b>Access Control:</b> هر تابعِ `set*`/`mint`/`withdraw`/`pause`/`update*` را از یک EOA دلخواه صدا بزن؛ اگر revert نشد = باگ.</li>
+              <li><b>Oracle / قیمت:</b> قیمت از `slot0`/`getReserves`/نرخ لحظه‌ای خوانده می‌شود؟ با فلش‌لون قیمت را بکش و ببین محاسبه‌ها تغییر می‌کند.</li>
+              <li><b>گرد کردن / دقت:</b> الگوهای `* /` و `- 1` را ببین؛ با ۱ وئی چند بار deposit/withdraw کن و dust را جمع کن؛ ببین به نفع کیست.</li>
+              <li><b>Fee-on-transfer / توکن خاص:</b> اگر قرارداد با توکنی کار می‌کند که موقع transfer کارمزد کم می‌کند (PAXG, STA, tokens with tax)، بالانس ثبت‌شده با واقعی نمی‌خواند.</li>
+              <li><b>امضا / Replay:</b> `ecrecover` دارد؟ nonce/deadline/domain جدا دارد؟ همان امضا را دوباره بفرست.</li>
+              <li><b>سلیپج / MEV:</b> سواپ‌ها `amountOutMin` و `deadline` دارند؟ تراکنش قربانی را sandwich کن.</li>
+              <li><b>DoS / Griefing:</b> آرایه‌های ذخیره‌سازی بی‌سقف (push بدون محدودیت) و حلقه‌های روی آن‌ها — با تراکنش ارزان بزرگش کن تا gas-out شود.</li>
+              <li><b>فلش‌لون / Inflation:</b> در Vaultها: سهم‌ها با مقدار اولیه چه می‌شود؟ اولین depositor را با donation به زیر ۱ سهم بکش (inflation attack).</li>
+              <li><b>امتیاز ناقص (Rounding favor):</b> توابعی که باقی‌مانده را به سمت مالک/پروتکل گرد می‌کنند ولی باید به سمت کاربر.</li>
+              <li><b>کد Upgradeable:</b> `initialize` محافظت یک‌بار-اجرا دارد؟ constructor در implementation هم اجرا شده؟ storage collision بین نسخه‌ها؟</li>
+              <li><b>تمرکز / Rug:</b> مالک چه توابعی دارد؟ اگر بتواند بالانس کسی را کم/توکن را freeze کند یا قیمت را بکشد، ریسک اعتمادی است (برای گزارش اعتباری).</li>
+            </ol>
+            <p class="sec-playbook-tip">روش مسابقه‌ای: اول همه چیز را با همین ابزار اسکن کن، بعد برای هر یافته یک <b>PoC</b> مینیمال بنویس و «اثر اقتصادی» (چقدر و چه کسی ضرر می‌کند) را مشخص کن — شدت در C4/Sherlock بر اساس اثر است، نه فقط نوع باگ.</p>
+          </details>
+
           <div class="sec-contests">
             <div class="sec-contests-title">🏆 مسابقات واقعی باگ‌یابی (باگ باونتی)</div>
             <p class="muted sec-contests-desc">

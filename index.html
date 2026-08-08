@@ -7,6 +7,19 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css" />
   <link rel="stylesheet" href="styles.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "@ethereumjs/vm": "https://esm.sh/@ethereumjs/vm@8.1.0?bundle",
+      "@ethereumjs/util": "https://esm.sh/@ethereumjs/util@9.1.0?bundle",
+      "@ethereumjs/common": "https://esm.sh/@ethereumjs/common@4.4.0?bundle",
+      "@noble/hashes/sha3": "https://esm.sh/@noble/hashes@1.5.0/sha3.js",
+      "node:buffer": "https://esm.sh/node/buffer.mjs",
+      "node:events": "https://esm.sh/node/events.mjs",
+      "node:util": "https://esm.sh/node/util.mjs"
+    }
+  }
+  </script>
 </head>
 <body>
   <div id="app">
@@ -141,6 +154,7 @@
       </div>
       <div class="modal-foot">
         <button id="gen-build" class="btn-primary">⚙️ ساخت توکن</button>
+        <button id="gen-test" class="btn-secondary">🧪 تست سبز</button>
         <button id="gen-download" class="btn-secondary hidden">⬇️ دانلود فایل .sol</button>
         <button id="gen-close2" class="btn-secondary">بستن</button>
       </div>

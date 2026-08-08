@@ -424,6 +424,17 @@ p.muted { color: var(--muted); }
 .gen-status.err { color: var(--error); border-color: var(--error); }
 .gen-status.ok { color: var(--success); border-color: var(--success); }
 
+.gen-title { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+.gen-title.ok { color: var(--success); }
+.gen-title.err { color: var(--error); }
+.gen-results { max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; margin: 6px 0; }
+.gen-row { padding: 4px 10px; font-size: 13px; border-bottom: 1px solid var(--border); }
+.gen-row:last-child { border-bottom: none; }
+.gen-row code { direction: ltr; font-size: 12px; color: var(--muted); }
+.gen-row.ok { color: var(--success); }
+.gen-row.err { color: var(--error); }
+.gen-summary { font-size: 12px; color: var(--muted); }
+
 .gen-note {
   margin-top: 10px;
   font-size: 12px;

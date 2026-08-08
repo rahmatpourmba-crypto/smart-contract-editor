@@ -753,12 +753,73 @@ function doDownload() {
   }
 }
 
+// ---------- Green test (in-browser EVM) ----------
+
+async function doGreenTest() {
+  const opts = readOpts();
+  if (!opts) return;
+  if (!solcReady) {
+    setGenStatus('⏳ کامپایلر هنوز بارگذاری نشده. کمی صبر کن و دوباره بزن.', '');
+    return;
+  }
+  const btn = document.getElementById('gen-test');
+  btn.disabled = true;
+  setGenStatus('🧪 در حال تست سبز — استقرار و اجرای واقعی در EVM مرورگر (بدون شبکه، بدون گس)...', '');
+  try {
+    const result = buildToken(opts);
+    const srcName = result.fileName;
+    const input = {
+      language: 'Solidity',
+      sources: {},
+      settings: {
+        optimizer: { enabled: document.getElementById('chk-optimize').checked, runs: 200 },
+        outputSelection: { '*': { '*': ['abi', 'evm.bytecode'] } }
+      }
+    };
+    input.sources[srcName] = { content: result.src };
+    const out = JSON.parse(await solc.compile(JSON.stringify(input)));
+    const errs = (out.errors || []).filter(function (e) { return e.severity === 'error'; });
+    if (errs.length) {
+      setGenStatus('❌ کامپایل ناموفق: <code>' + escapeHtml(errs[0].formattedMessage) + '</code>', 'err');
+      return;
+    }
+    const contracts = out.contracts && out.contracts[srcName];
+    const cname = contracts ? Object.keys(contracts)[0] : null;
+    const c = cname && contracts[cname];
+    if (!c || !c.abi || !c.evm || !c.evm.bytecode || !c.evm.bytecode.object) {
+      setGenStatus('❌ ABI/بایت‌کد یافت نشد.', 'err');
+      return;
+    }
+
+    setGenStatus('🧪 در حال اجرای تست‌ها در EVM مرورگر...');
+    const mod = await import('./evm-test.js');
+    const res = await mod.runContractTests(c.abi, '0x' + c.evm.bytecode.object, {
+      name: opts.name, symbol: opts.symbol, supply: opts.supply
+    });
+
+    let html = '<div class="gen-title ' + (res.passed === res.total ? 'ok' : 'err') + '">' +
+      (res.passed === res.total ? '✅ تست سبز: همه تست‌ها پاس شدند — قرارداد سالم است' : '❌ برخی تست‌ها رد شدند') +
+      '</div>';
+    html += '<div class="gen-results">' + res.results.map(function (r) {
+      return '<div class="gen-row ' + (r.ok ? 'ok' : 'err') + '">' + (r.ok ? '✅' : '❌') + ' ' + r.label +
+        (r.detail ? ' <code>' + escapeHtml(r.detail) + '</code>' : '') + '</div>';
+    }).join('') + '</div>';
+    html += '<div class="gen-summary">' + res.passed + '/' + res.total + ' پاس — ' + res.durationMs + 'ms</div>';
+    setGenStatus(html, res.passed === res.total ? 'ok' : 'err');
+  } catch (e) {
+    setGenStatus('❌ تست سبز خطا داد: ' + escapeHtml(e.message), 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function setupGenerator() {
   const modal = document.getElementById('gen-modal');
   const openBtn = document.getElementById('btn-generator');
   const closeBtn = document.getElementById('gen-close');
   const closeBtn2 = document.getElementById('gen-close2');
   const buildBtn = document.getElementById('gen-build');
+  const testBtn = document.getElementById('gen-test');
   const dlBtn = document.getElementById('gen-download');
   const dlToolbar = document.getElementById('btn-download');
   const modeInputs = document.querySelectorAll('input[name="gen-mode"]');
@@ -785,6 +846,7 @@ function setupGenerator() {
   closeBtn2.addEventListener('click', closeModal);
   modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
   buildBtn.addEventListener('click', doGenerate);
+  testBtn.addEventListener('click', doGreenTest);
   dlBtn.addEventListener('click', doDownload);
   dlToolbar.addEventListener('click', function () {
     if (activeFile) downloadFile(activeFile, files[activeFile]);

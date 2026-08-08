@@ -74,7 +74,11 @@ let editor = null;
 let solc = null; // current compiler wrapper
 let solcReady = false;
 
-// ---------- Solc loading (browser wrapper around soljson.js Module) ----------
+// ---------- Solc loading (runs inside a Web Worker) ----------
+// Chrome refuses synchronous WebAssembly compilation on the main thread for
+// buffers larger than 8MB. solc's wasm binary is ~16MB, so the emscripten
+// runtime runs in a worker where that restriction does not apply.
+
 const loadedCompiler = {};
 
 async function loadCompiler(version) {
@@ -87,126 +91,49 @@ async function loadCompiler(version) {
 
   setSolcStatus('Loading solc ' + version + '...');
 
-  // soljson.js exposes a single global Module. If the already-loaded binary
-  // belongs to another version we reload the page to get a clean runtime.
-  if (typeof Module !== 'undefined' && loadedCompiler.__loadedVersion && loadedCompiler.__loadedVersion !== version) {
-    localStorage.setItem('sce_version', version);
-    location.reload();
-    throw new Error('Reloading for version ' + version);
-  }
-
   const src = info.local || info.remote;
-  await loadScriptWithGlobal(src, 'Module');
-  loadedCompiler.__loadedVersion = version;
-  await waitForRuntime();
-
-  const core = {
-    alloc: Module._solidity_alloc || Module._malloc,
-    license: () => Module.UTF8ToString(Module._solidity_license()),
-    version: () => Module.UTF8ToString(Module._solidity_version()),
-    reset: () => { if (Module._solidity_reset) Module._solidity_reset(); }
-  };
-  core.addFunction = (fn, sig) => Module.addFunction(fn, sig);
-  core.removeFunction = (fn) => Module.removeFunction(fn);
-  core.copyFromCString = (ptr) => Module.UTF8ToString(ptr);
-
-  const compileInternal = Module.cwrap('solidity_compile', 'string', ['string', 'number', 'number']);
-  core.compileStandard = (inputJson, readCallback) => {
-    const single = function (kind, data) {
-      if (kind === 'source') {
-        return readCallback(Module.UTF8ToString(data));
-      }
-      return { error: 'SMT solver callback not supported' };
-    };
-    const cb = Module.addFunction(single, 'viiiii');
-    try {
-      return compileInternal(inputJson, cb, 0);
-    } finally {
-      Module.removeFunction(cb);
-      if (core.reset) core.reset();
-    }
-  };
-
-  const wrapper = {
-    version: core.version,
-    compile: function (inputJson, readCallback) {
-      const cb = readCallback || function (path) {
-        return { error: 'File import callback not supported' };
-      };
-      return core.compileStandard(inputJson, cb);
-    }
-  };
-
+  const worker = new Worker('solc.worker.js');
+  const wrapper = await workerLoadCompiler(worker, version, src);
   loadedCompiler[version] = wrapper;
   setSolcStatus('solc ' + version + ' ready');
   return wrapper;
 }
 
-function loadScript(src) {
+function workerLoadCompiler(worker, version, src) {
   return new Promise((resolve, reject) => {
-    if (document.querySelector('script[data-solc-src="' + src + '"]')) {
-      resolve();
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = src;
-    script.dataset.solcSrc = src;
-    script.onload = resolve;
-    script.onerror = () => reject(new Error('Failed to load ' + src));
-    document.head.appendChild(script);
-  });
-}
-
-function loadScriptWithGlobal(src, globalName, timeoutMs) {
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector('script[data-solc-src="' + src + '"]');
-    if (existing && typeof window[globalName] !== 'undefined') {
-      resolve();
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = src;
-    script.dataset.solcSrc = src;
-    const timer = setTimeout(() => {
-      script.remove();
-      reject(new Error('Timeout loading ' + src));
-    }, timeoutMs || 60000);
-    script.onload = () => {
-      // Emscripten soljson sets Module synchronously during evaluation.
-      clearTimeout(timer);
-      resolve();
+    let id = 0;
+    const pending = new Map();
+    worker.onmessage = (e) => {
+      const msg = e.data;
+      if (msg.type === 'ready') {
+        resolve({
+          version: () => version,
+          compile: (inputJson) => new Promise((res, rej) => {
+            const mid = ++id;
+            pending.set(mid, { res, rej });
+            worker.postMessage({ type: 'compile', id: mid, input: inputJson });
+          })
+        });
+      } else if (msg.type === 'result') {
+        const p = pending.get(msg.id);
+        if (p) {
+          pending.delete(msg.id);
+          p.res(msg.output);
+        }
+      } else if (msg.type === 'error') {
+        if (msg.id) {
+          const p = pending.get(msg.id);
+          if (p) {
+            pending.delete(msg.id);
+            p.rej(new Error(msg.message));
+          }
+        } else {
+          reject(new Error(msg.message));
+        }
+      }
     };
-    script.onerror = () => {
-      clearTimeout(timer);
-      reject(new Error('Failed to load ' + src));
-    };
-    document.head.appendChild(script);
-  });
-}
-
-function waitForRuntime() {
-  return new Promise((resolve, reject) => {
-    if (typeof Module === 'undefined') {
-      reject(new Error('Module not defined'));
-      return;
-    }
-    if (Module.calledRun || (Module._solidity_compile && Module._solidity_version)) {
-      resolve();
-      return;
-    }
-    const prev = Module.onRuntimeInitialized;
-    Module.onRuntimeInitialized = function () {
-      if (typeof prev === 'function') prev();
-      resolve();
-    };
-    const timer = setTimeout(() => reject(new Error('Compiler runtime timeout')), 90000);
-    Module.onRuntimeInitialized = (function (fn) {
-      return function () {
-        if (typeof fn === 'function') fn();
-        clearTimeout(timer);
-        resolve();
-      };
-    })(prev);
+    worker.onerror = (e) => reject(new Error('Worker error: ' + e.message));
+    worker.postMessage({ type: 'load', src: src, version: version });
   });
 }
 
@@ -233,7 +160,7 @@ async function compile() {
   clearOutput('abi', 'bytecode', 'deployed');
 
   try {
-    const result = JSON.parse(solc.compile(JSON.stringify(input)));
+    const result = JSON.parse(await solc.compile(JSON.stringify(input)));
     renderOutput(result);
   } catch (e) {
     logError('Compilation crashed: ' + e.message);

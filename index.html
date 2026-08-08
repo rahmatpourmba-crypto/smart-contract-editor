@@ -64,6 +64,7 @@
           <button class="out-tab" data-panel="abi">ABI</button>
           <button class="out-tab" data-panel="bytecode">Bytecode</button>
           <button class="out-tab" data-panel="deployed">Deployed</button>
+          <button class="out-tab" data-panel="security">🛡️ امنیت</button>
         </div>
         <div id="panel-errors" class="out-panel active">
           <p class="muted">No compilation yet. Click Compile.</p>
@@ -76,6 +77,37 @@
         </div>
         <div id="panel-deployed" class="out-panel">
           <pre id="deployed-output" class="muted">—</pre>
+        </div>
+        <div id="panel-security" class="out-panel">
+          <div class="sec-toolbar">
+            <button id="sec-use-editor" class="btn-secondary" title="سورس فعلی ادیتور">📄 از ادیتور</button>
+            <button id="sec-use-token" class="btn-secondary" title="سورس توکن ساز">🧾 از توکن ساز</button>
+            <button id="sec-run" class="btn-primary">🛡️ تحلیل امنیتی</button>
+            <button id="sec-copy" class="btn-secondary hidden">📋 کپی گزارش</button>
+          </div>
+          <textarea id="sec-source" class="sec-source" spellcheck="false" placeholder="// سورس Solidity را اینجا بچسبان، یا از دکمه‌های «از ادیتور» / «از توکن ساز» استفاده کن...&#10;// سپس «تحلیل امنیتی» را بزن تا اسکن استاتیک + شبیه‌سازی حمله در EVM مرورگر اجرا شود."></textarea>
+          <div id="sec-loading" class="muted"></div>
+          <div id="sec-report"></div>
+
+          <div class="sec-contests">
+            <div class="sec-contests-title">🏆 مسابقات واقعی باگ‌یابی (باگ باونتی)</div>
+            <p class="muted sec-contests-desc">
+              بهترین راه یادگیری و درآمد از امنیت: باگ‌های واقعی قراردادها را پیدا کن و جایزه بگیر.
+              کد مسابقات را در همین ادیتور باز کن (دانلود و paste) و قبل از ارسال گزارش، با «🛡️ تحلیل امنیتی» بررسی کن.
+            </p>
+            <ul>
+              <li><a href="https://code4rena.com/audits" target="_blank" rel="noopener">Code4rena</a> — معروف‌ترین مسابقات حسابرسی؛ جوایز بزرگ، قالب Audit Contest و Audit Comp</li>
+              <li><a href="https://audits.sherlock.xyz/contests" target="_blank" rel="noopener">Sherlock</a> — مسابقات حسابرسی با پوشش بیمه‌ای برای پیداکنندگان باگ</li>
+              <li><a href="https://app.hats.finance/audit-competitions" target="_blank" rel="noopener">Hats Finance</a> — رقابت‌های مستمر با جایزه</li>
+              <li><a href="https://www.codehawks.com/contests" target="_blank" rel="noopener">CodeHawks (Cyfrin)</a> — مسابقات رسمی + شبکه پیداکنندگان</li>
+              <li><a href="https://cantina.xyz/competitions" target="_blank" rel="noopener">Cantina</a> — مسابقات به‌سبک C4/Code4rena</li>
+              <li><a href="https://immunefi.com/explore/" target="_blank" rel="noopener">Immunefi</a> — بزرگ‌ترین پلتفرم باگ‌باونتی (پروتکل‌های DeFi با جایزه‌های چندمیلیون دلاری)</li>
+            </ul>
+            <div class="sec-contests-tip">
+              💡 مسیر شروع: ابتدا اسکن استاتیک و تست‌های داینامیک این صفحه را روی قراردادهای تمرینی اجرا کن،
+              سپس در مسابقه‌های ابتدایی (Sherlock/C4 First Flights) شرکت کن و گزارش‌های معتبر دیگران را بخوان.
+            </div>
+          </div>
         </div>
       </section>
     </main>
@@ -165,5 +197,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
   <script src="generator.js"></script>
   <script src="app.js"></script>
+  <script src="security.js"></script>
 </body>
 </html>

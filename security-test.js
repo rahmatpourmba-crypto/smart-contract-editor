@@ -337,6 +337,90 @@ function externalCallMap(source) {
   return { nonGuarded, guarded };
 }
 
+function functionChunks(source) {
+  const chunks = source.split(/\n\s*function\s+/);
+  const out = [];
+  chunks.slice(1).forEach(chunk => {
+    const name = (chunk.match(/^([A-Za-z_]\w*)/) || [])[1];
+    if (name) out.push({ name, body: chunk });
+  });
+  return out;
+}
+
+// Economic / logic-invariant rules: accounting, rounding direction, share math,
+// fee-on-transfer mismatch, pair-based buy/sell split, upgradeable storage.
+function economicScan(source) {
+  const findings = [];
+  const clean = stripComments(source);
+  const chunks = functionChunks(clean);
+  const push = (id, sev, title, detail, fix, exploit, index) => {
+    findings.push({ id, sev, title, detail, fix, exploit, line: findLine(clean, index), kind: 'static' });
+  };
+
+  // E1 — deposit accounting via transferFrom can break with fee-on-transfer tokens.
+  const ftChunks = chunks.filter(c => /\.transferFrom\s*\(/.test(c.body));
+  if (ftChunks.length) {
+    push('fee-on-transfer-mismatch', 'Medium', 'دریافت توکن با transferFrom — ریسک توکن کارمزددار/rebasing',
+      'توابع ' + ftChunks.map(c => c.name).join(', ') + ' توکن را با transferFrom می‌گیرند ولی مبلغ ثبت‌شده همان amount است. با توکن‌های fee-on-transfer یا rebasing مقدار واقعی دریافتی کمتر/بیشتر از amount است و حسابداری به‌هم می‌خورد (سهم‌ها بیشتر از دارایی واقعی).',
+      'بعد از transferFrom، بالانس واقعی را با balanceOf بخوانید یا delta-balance بگیرید.',
+      'در PoC با یک توکن کارمزددار (مثل STA/PAXG-style) سپرده‌گذاری کن و نشان بده سهم/اعتبارِ ثبت‌شده بیشتر از موجودی واقعی است.', ftChunks[0].body.indexOf('transferFrom'));
+  }
+
+  // E2 — share/asset math with truncation in deposit/withdraw.
+  const shareChunks = chunks.filter(c => /(deposit|mint|stake|enter|convertToShares|previewDeposit|withdraw|redeem|claim)/i.test(c.name) && /\*\s*[^;\n]*\/\s*\w+/.test(c.body));
+  if (shareChunks.length) {
+    push('share-math-rounding', 'Medium', 'گرد کردن در محاسبه سهم/دارایی (deposit/withdraw)',
+      'محاسبه سهم در توابع ' + shareChunks.map(c => c.name).join(', ') + ' با ضرب-تقسیم انجام می‌شود. گرد کردن به سمت پایین در آستانه‌های کوچک = از دست رفتن دارایی کاربر یا ریسک first-depositor/inflation attack.',
+      'جهت گرد کردن را به سمت ضررِ پروتکل تنظیم کنید و حداقل سپرده/سهم بگذارید.',
+      'اولین depositor شو، سپس مقدار بسیار کوچک دیگر سپرده کن؛ اگر سهم او ۰ شد یا rounding به نفع او جمع شد = inflation/dust.', shareChunks[0].body.indexOf('*'));
+  }
+
+  // E3 — accounting based on full self-balance is donation-manipulable.
+  const balChunks = chunks.filter(c => /(deposit|withdraw|redeem|claim|reward|stake|interest|convertToAssets)/i.test(c.name) && /balanceOf\s*\(\s*address\s*\(\s*this\s*\)|\.balance\b/.test(c.body));
+  if (balChunks.length) {
+    const idx = balChunks[0].body.indexOf('balanceOf');
+    push('self-balance-accounting', 'Medium', 'حسابداری بر پایه بالانس کامل قرارداد',
+      'توابع ' + balChunks.map(c => c.name).join(', ') + ' بر اساس balanceOf(address(this)) یا .balance حساب می‌کنند. یک donation مستقیم می‌تواند ارزش محاسباتی را جابه‌جا کند (griefing)، پاداش را منحرف کند یا قیمت سهم را دستکاری کند.',
+      'مقدار را صرفاً از delta (قبل/بعد) یا پارامتر ورودی محاسبه کنید، نه بالانس کامل.',
+      'یک مقدار کوچک توکن/اتر مستقیم به قرارداد بفرست و ببین سهم/پاداش/نرخ عوض می‌شود.', idx >= 0 ? idx : balChunks[0].body.indexOf('.balance'));
+  }
+
+  // E4 — ERC20 return value unchecked (false-success tokens).
+  const retChunks = chunks.filter(c => /\.(transfer|transferFrom|approve)\s*\(/.test(c.body) && !/require|if\s*\(|\.ok\b|\bok\b/.test(c.body));
+  if (retChunks.length) {
+    push('unchecked-erc20-return', 'Low', 'بازگشت توکن چک نشده (false success)',
+      'توابع ' + retChunks.map(c => c.name).join(', ') + ' نتیجه transfer/transferFrom/approve را چک نمی‌کنند. برای توکن‌های غیراستاندارد که false برمی‌گردانند، شکست بی‌صدا = خطای حسابداری.',
+      'از SafeERC20 استفاده کنید یا require(ok) بگذارید.',
+      'در PoC با توکنی که transfer را false برمی‌گرداند نشان بده تراکنش «موفق» ثبت می‌شود ولی توکن جابه‌جا نشده.', retChunks[0].body.indexOf('.transfer'));
+  }
+
+  // E5 — separate buy/sell tax but no pair comparison = sell-tax bypass.
+  const hasPair = /\b\w*pair\w*\b/.test(clean);
+  const hasBuySell = /\b(buyTax|sellTax|buyTaxBps|sellTaxBps|buyFee|sellFee|taxOnBuy|taxOnSell|buyTaxPercent|sellTaxPercent)\b/i.test(clean);
+  if (hasPair && hasBuySell && !/\b\w*pair\w*\s*(==|!=|>=|<=|>|<)|==\s*\w*pair|!=\s*\w*pair/.test(clean)) {
+    push('buy-sell-pair-missing', 'Medium', 'تفکیک خرید/فروش بر اساس pair پیاده نشده',
+      'قرارداد هم مالیات جدا برای خرید/فروش دارد و هم آدرس pair، ولی هیچ مقایسه‌ای با pair در کد دیده نمی‌شود. فروشندگان می‌توانند با انتقال مستقیم (بدون عبور از صرافی) از مالیات فروش فرار کنند یا مالیات اشتباه گرفته شود.',
+      'در مسیر انتقال، `to == pair` (فروش) و `from == pair` (خرید) را دقیق تفکیک کنید.',
+      'در PoC از یک آدرس معمولی چند انتقال بده و ببین مالیات فروش اعمال می‌شود یا نه.', clean.indexOf('pair'));
+  }
+
+  // E6 — upgradeable without storage gap.
+  if (/\b(initializer|upgradeTo|upgradeToAndCall|_authorizeUpgrade)\b/.test(clean) && !/\b__gap\b/.test(clean)) {
+    push('upgradeable-gap', 'Info', 'بدون storage gap در قرارداد آپگریدپذیر',
+      'قرارداد الگوی آپگرید دارد ولی __gap دیده نمی‌شود. افزودن متغیر جدید در نسخه بعدی، storage را جابه‌جا می‌کند (storage collision) و state را خراب می‌کند.',
+      'یک آرایه __gap (مثلاً ۵۰ اسلات) در انتهای storage بگذارید.', '', clean.indexOf('upgradeTo') >= 0 ? clean.indexOf('upgradeTo') : clean.indexOf('initializer'));
+  }
+
+  // E7 — LP liquidity not visibly locked.
+  if (/\baddLiquidity\b/.test(clean) && !/\block|_lock\b/.test(clean)) {
+    push('liquidity-unlocked', 'Info', 'نقدینگی (LP) — قفل دیده نمی‌شود',
+      'قرارداد addLiquidity دارد ولی مکانیزم قفل LP دیده نمی‌شود. اگر توکن LP نزد مالک بماند و قفل نباشد، ریسک rug (حذف نقدینگی) دارد.',
+      'توکن LP را قفل/بسوزانید یا به یک آدرس قفل (timelock) بدهید.', '', clean.indexOf('addLiquidity'));
+  }
+
+  return findings;
+}
+
 export function staticScan(source) {
   const findings = [];
   const clean = stripComments(source);
@@ -394,6 +478,7 @@ export function staticScan(source) {
       line: 0, kind: 'static'
     });
   }
+  findings.push(...economicScan(source));
   return findings;
 }
 
@@ -423,6 +508,19 @@ async function call(vm, from, to, data) {
   });
   const err = (r.execResult && r.execResult.exceptionError) || r.exceptionError;
   return { reverted: !!err, error: err ? String(err.error) : null };
+}
+
+// Call a view/function and decode the returned uint256 (offset 0).
+async function readUint(vm, from, to, data) {
+  const r = await vm.evm.runCall({
+    caller: Address.fromString(from), to,
+    data, gasLimit: 0xFFFFFFFFn, gasPrice: 1n, value: 0n
+  });
+  const ret = r.execResult && r.execResult.returnValue;
+  if (!ret) return 0n;
+  const bytes = Buffer.isBuffer(ret) ? ret : Buffer.from(ret);
+  const hex = bytes.toString('hex').padStart(64, '0').slice(0, 64);
+  return BigInt('0x' + hex);
 }
 
 async function newVM(bytecode) {
@@ -628,6 +726,39 @@ export async function runSecurityTests(abi, bytecode, source) {
     }
   } catch (e) {
     record('فراخوانی دوباره initialize/init', false, 'Info', 'پروب initialize اجرا نشد (' + e.message + ').');
+  }
+
+  // 16. Token balance-conservation invariant: 50 tiny transfers must not leak
+  // or create tokens. Runs on plain tokens (no tax/fee state) in a fresh VM.
+  try {
+    const hasTax = abi.some(f => /tax|fee/i.test(f.name));
+    if (hasFn(abi, 'transfer') && hasFn(abi, 'balanceOf') && hasFn(abi, 'totalSupply') && !hasTax) {
+      const { vm: vm4, addr: addr4 } = await newVM(bytecode);
+      const trFrag = fragOf(abi, 'transfer');
+      const balFrag = { name: 'balanceOf', inputs: [{ type: 'address' }] };
+      const tsFrag = fragOf(abi, 'totalSupply');
+      const supply0 = await readUint(vm4, OWNER, addr4, encodeCall(tsFrag, []));
+      await call(vm4, OWNER, addr4, encodeCall(trFrag, [ATTACKER, 1000n]));
+      const bA0 = await readUint(vm4, ATTACKER, addr4, encodeCall(balFrag, [ATTACKER]));
+      const bO0 = await readUint(vm4, ATTACKER, addr4, encodeCall(balFrag, [OWNER]));
+      for (let k = 0; k < 50; k++) {
+        await call(vm4, ATTACKER, addr4, encodeCall(trFrag, [OWNER, 1n]));
+      }
+      const bA1 = await readUint(vm4, ATTACKER, addr4, encodeCall(balFrag, [ATTACKER]));
+      const bO1 = await readUint(vm4, ATTACKER, addr4, encodeCall(balFrag, [OWNER]));
+      const supply1 = await readUint(vm4, ATTACKER, addr4, encodeCall(tsFrag, []));
+      const leaks = (bA0 + bO0) !== (bA1 + bO1);
+      const supplyChanged = supply0 !== supply1;
+      record('پایستگی توکن (حسابداری در انتقال‌های ریز)',
+        leaks || supplyChanged, 'Medium',
+        leaks || supplyChanged
+          ? 'پس از ۵۰ انتقال ۱-وئی، مجموع بالانس‌ها یا عرضه تغییر کرد — نشتی، گرد کردن یا ضرر حسابداری در انتقال‌های ریز وجود دارد.'
+          : 'پس از ۵۰ انتقال ۱-وئی مجموع بالانس‌ها و عرضه ثابت ماند — حسابداری پایستار است.');
+    } else {
+      record('پایستگی توکن', false, 'Info', 'این تست روی توکن‌های دارای مالیات/کارمزد یا بدون totalSupply/balanceOf اجرا نمی‌شود.');
+    }
+  } catch (e) {
+    record('پایستگی توکن', false, 'Info', 'پروب پایستگی اجرا نشد (' + e.message + ').');
   }
 
   return { probes, durationMs: Date.now() - started };

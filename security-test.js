@@ -421,6 +421,282 @@ function economicScan(source) {
   return findings;
 }
 
+// ---------- AST expert analyzer (solc legacy AST from standard JSON) ----------
+// Walks the actual parse tree (not regexes) to detect real CEI violations,
+// per-function access control, variable shadowing and attack-surface data.
+function astWalk(root, visit) {
+  const seen = new Set();
+  (function rec(n) {
+    if (!n || typeof n !== 'object' || seen.has(n)) return;
+    seen.add(n);
+    visit(n);
+    for (const k of Object.keys(n)) {
+      const v = n[k];
+      if (Array.isArray(v)) { for (const x of v) rec(x); }
+      else if (v && typeof v === 'object') rec(v);
+    }
+  })(root);
+}
+
+function srcStart(srcStr) {
+  const m = /^(\d+)/.exec(String(srcStr));
+  return m ? +m[1] : 0;
+}
+
+function srcSlice(source, srcStr) {
+  const m = /^(\d+):(\d+)/.exec(String(srcStr));
+  if (!m) return '';
+  return source.substr(+m[1], +m[2]);
+}
+
+function nodeTypeName(tn) {
+  if (!tn) return '';
+  switch (tn.nodeType) {
+    case 'ElementaryTypeName': return tn.name;
+    case 'ArrayTypeName': return nodeTypeName(tn.baseType) + '[]';
+    case 'Mapping': return 'mapping';
+    case 'UserDefinedTypeName': return tn.name || (tn.pathNode || []).map(p => p.name || '').join('.');
+    default: return tn.name || tn.nodeType || '';
+  }
+}
+
+function isStateRef(node, stateNames) {
+  if (!node || !node.nodeType) return false;
+  if (node.nodeType === 'Identifier') return stateNames.has(node.name);
+  if (node.nodeType === 'IndexAccess') return isStateRef(node.baseExpression || node.base, stateNames);
+  if (node.nodeType === 'MemberAccess') return isStateRef(node.expression, stateNames);
+  return false;
+}
+
+const EXTCALL_MEMBERS = new Set(['call', 'send', 'transfer', 'delegatecall', 'staticcall', 'callcode']);
+function extCallMember(n) {
+  if (n.nodeType !== 'FunctionCall' || !n.expression) return null;
+  let e = n.expression;
+  if (e.nodeType === 'FunctionCallOptions') e = e.expression;
+  if (e && e.nodeType === 'MemberAccess' && EXTCALL_MEMBERS.has(e.memberName)) return e.memberName;
+  return null;
+}
+function isExtCallNode(n) {
+  return extCallMember(n) !== null;
+}
+function extCallHasValue(n) {
+  if (n.nodeType !== 'FunctionCall') return false;
+  if (n.value) return true;
+  const e = n.expression;
+  if (e && e.nodeType === 'FunctionCallOptions' && e.options && e.options.value) return true;
+  return false;
+}
+
+function collectStateVars(contractNode) {
+  const vars = [];
+  (contractNode.nodes || []).forEach(n => {
+    if (n.nodeType === 'StateVariableDeclaration') {
+      (n.variables || []).forEach(v => vars.push({ name: v.name, type: nodeTypeName(v.typeName), visibility: v.visibility || 'internal' }));
+    } else if (n.nodeType === 'VariableDeclaration' && (n.isStateVar === true || n.stateVariable === true)) {
+      vars.push({ name: n.name, type: nodeTypeName(n.typeName), visibility: n.visibility || 'internal' });
+    }
+  });
+  return vars;
+}
+
+function fnModifierNames(fnNode) {
+  return (fnNode.modifiers || []).map(m => {
+    const mn = m.modifierName;
+    return (mn && mn.name) || m.name || '';
+  }).filter(Boolean);
+}
+
+function fnAccessGuard(source, fnNode) {
+  let guard = '';
+  astWalk(fnNode.body, n => {
+    if (guard) return;
+    if (n.nodeType === 'FunctionCall' && n.expression && n.expression.nodeType === 'Identifier' &&
+        (n.expression.name === 'require' || n.expression.name === 'assert')) {
+      const arg0 = (n.arguments || [])[0];
+      if (arg0 && arg0.nodeType !== 'Literal') guard = srcSlice(source, arg0.src).replace(/\s+/g, ' ').trim();
+    }
+  });
+  return guard;
+}
+
+function fnEvents(fnNode, stateNames) {
+  const calls = [];
+  const writes = [];
+  astWalk(fnNode.body, n => {
+    if (n.nodeType === 'FunctionCall') {
+      if (isExtCallNode(n)) calls.push({ off: srcStart(n.src), value: extCallHasValue(n) });
+      if (n.expression && n.expression.nodeType === 'MemberAccess' && n.expression.memberName === 'push' &&
+          isStateRef(n.expression.expression, stateNames)) {
+        writes.push({ off: srcStart(n.src), kind: 'push' });
+      }
+    } else if (n.nodeType === 'Assignment' && isStateRef(n.leftHandSide, stateNames)) {
+      writes.push({ off: srcStart(n.src), kind: 'assign' });
+    } else if (n.nodeType === 'UnaryOperation' && (n.operator === '++' || n.operator === '--') && isStateRef(n.subExpression, stateNames)) {
+      writes.push({ off: srcStart(n.src), kind: 'unary' });
+    }
+  });
+  const byOff = (a, b) => a.off - b.off;
+  calls.sort(byOff); writes.sort(byOff);
+  return { calls, writes };
+}
+
+function fnShadowed(stateNames, fnNode) {
+  const out = [];
+  ((fnNode.parameters && fnNode.parameters.parameters) || []).forEach(p => {
+    if (p.name && stateNames.has(p.name) && out.indexOf(p.name) < 0) out.push(p.name);
+  });
+  astWalk(fnNode.body, n => {
+    if (n.nodeType === 'VariableDeclarationStatement') {
+      (n.variables || []).forEach(v => {
+        if (v.name && stateNames.has(v.name) && out.indexOf(v.name) < 0) out.push(v.name);
+      });
+    }
+  });
+  return out;
+}
+
+function isPayableFn(fnNode) {
+  return fnNode.stateMutability === 'payable' || fnNode.isPayable === true ||
+    (fnNode.modifiers || []).some(m => (m.modifierName && m.modifierName.name) === 'payable');
+}
+
+export function astAnalyze(ast, source) {
+  const findings = [];
+  const contracts = [];
+  const push = (sev, title, detail, fix, exploit, index, id) => {
+    findings.push({ id: id || 'ast', sev, title, detail, fix, exploit, line: findLine(source, index), kind: 'ast' });
+  };
+
+  if (!ast || !ast.nodes) return { findings, contracts };
+
+  const upgradeable = /initializer|upgradeTo|_authorizeUpgrade|delegatecall/i.test(source);
+
+  ast.nodes.forEach(suNode => {
+    if (!suNode || suNode.nodeType !== 'ContractDefinition') return;
+    const stateVars = collectStateVars(suNode);
+    const stateNames = new Set(stateVars.map(v => v.name));
+    const fns = [];
+    (suNode.nodes || []).forEach(n => {
+      if (n.nodeType !== 'FunctionDefinition') return;
+      fns.push(n);
+      const name = n.name || '';
+      const isEntry = n.visibility === 'external' || n.visibility === 'public';
+      const isStateMutating = n.stateMutability !== 'view' && n.stateMutability !== 'pure';
+
+      // CEI: external call then a state write, without a reentrancy guard.
+      if (isEntry && isStateMutating) {
+        const { calls, writes } = fnEvents(n, stateNames);
+        const mods = fnModifierNames(n);
+        if (calls.length && writes.length) {
+          const firstCall = calls[0];
+          const lateWrites = writes.filter(w => w.off > firstCall.off);
+          const guarded = mods.some(m => /nonReentrant|guard|protected|pausable/i.test(m));
+          if (lateWrites.length && !guarded) {
+            const sev = (/(withdraw|redeem|claim|pay|buy|sell|swap|execute|collect|harvest|unstake|release|mint)/i.test(name) || calls.some(c => c.value)) ? 'High' : 'Medium';
+            push(sev, 'شکستن CEI در تابع ' + name + ' (نوشتن state بعد از فراخوانی خارجی)',
+              'در تابع ' + name + ' ابتدا فراخوانی خارجی (call/send/transfer) انجام می‌شود و سپس ' + lateWrites.length + ' نوشتنِ state می‌آید، بدون modifier ضد ورود مجدد. این دقیقاً الگوی Reentrancy است.',
+              'همه به‌روزرسانی‌های state را قبل از فراخوانی خارجی منتقل کنید یا nonReentrant اضافه کنید.',
+              'قرارداد مهاجم با fallback() همان تابع را دوباره صدا می‌زند؛ اگر برداشت دوم موفق شد، اثر اقتصادی را در PoC ثابت کن.',
+              lateWrites[0].off, 'ast-cei-' + name);
+          }
+        }
+      }
+
+      // Per-function access control for privileged-looking functions.
+      if (isEntry && isStateMutating && PRIVILEGED.test(name)) {
+        const mods = fnModifierNames(n);
+        const guard = fnAccessGuard(source, n);
+        if (!mods.length && !guard) {
+          push('Medium', 'تابع ویژه بدون محافظ دسترسی ظاهری: ' + name + ' (تحلیلگر AST)',
+            'تابع ' + name + ' (نام وابسته به نقش) هیچ modifier و هیچ require/assert بر msg.sender ندارد. اگر مجاز به فراخوانی عمومی نیست، باگ کنترل دسترسی است.',
+            'modifier فقط‌نقش یا require(msg.sender == ...) اضافه کنید.',
+            'از یک EOA دلخواه (نه مالک) تابع را صدا بزن؛ بدون revert اجرا شد = اثبات. سپس اثر اقتصادی را بسنج.',
+            srcStart(n.src), 'ast-acl-' + name);
+        }
+      }
+
+      // Variable shadowing.
+      const shadowed = fnShadowed(stateNames, n);
+      if (shadowed.length) {
+        push('Low', 'سایه‌اندازی متغیر در تابع ' + name + ': ' + shadowed.join(', '),
+          'پارامتر/متغیر محلی ' + shadowed.join(', ') + ' نام یک متغیر state را تکرار می‌کند. خوانایی و امنیت را به خطر می‌اندازد (اشتباه در ارجاع به state).',
+          'نام متغیر محلی را تغییر دهید.',
+          '', srcStart(n.src), 'ast-shadow-' + name);
+      }
+    });
+
+    contracts.push({
+      name: suNode.name || 'Contract',
+      contractKind: suNode.contractKind || 'contract',
+      stateVars: stateVars.map(v => v.name + ': ' + v.type),
+      functions: fns.filter(f => f.visibility === 'external' || f.visibility === 'public').map(f => f.name || ''),
+      payableFunctions: fns.filter(isPayableFn).map(f => f.name || ''),
+      upgradeable
+    });
+  });
+
+  return { findings, contracts };
+}
+
+export function attackSurface(ast, source) {
+  const surface = { contracts: [], roles: [], assets: [], entrypoints: [] };
+  if (!ast || !ast.nodes) return surface;
+  const seenRoles = new Set();
+  const seenAssets = new Set();
+  const addRole = (name, from) => {
+    if (seenRoles.has(name)) return;
+    seenRoles.add(name);
+    surface.roles.push({ name, from });
+  };
+  const addAsset = (name, desc) => {
+    if (seenAssets.has(name)) return;
+    seenAssets.add(name);
+    surface.assets.push({ name, desc });
+  };
+  ast.nodes.forEach(suNode => {
+    if (!suNode || suNode.nodeType !== 'ContractDefinition') return;
+    const stateVars = collectStateVars(suNode);
+    const stateNames = new Set(stateVars.map(v => v.name));
+    const entrypoints = [];
+    let hasPayable = false;
+    let transfersToken = false;
+    (suNode.nodes || []).forEach(n => {
+      if (n.nodeType !== 'FunctionDefinition') return;
+      const name = n.name || '';
+      const isEntry = n.visibility === 'external' || n.visibility === 'public';
+      if (isPayableFn(n)) hasPayable = true;
+      if (isEntry && n.stateMutability !== 'view' && n.stateMutability !== 'pure') {
+        const mods = fnModifierNames(n);
+        const guard = fnAccessGuard(source, n);
+        mods.forEach(m => {
+          const r = /^only(Owner|Admin|Operator|Minter|Governance|Pauser|Vault|Role)/i.exec(m);
+          if (r) addRole(r[1] || m, 'modifier ' + m);
+        });
+        if (guard && /msg\.sender/.test(guard)) addRole('owner-check', 'require: ' + guard);
+        entrypoints.push({
+          name, stateMutability: n.stateMutability,
+          mods, guard,
+          args: ((n.parameters && n.parameters.parameters) || []).map(p => nodeTypeName(p.typeName) + (p.name ? ' ' + p.name : ''))
+        });
+      }
+      astWalk(n.body, node => {
+        if (node.nodeType === 'FunctionCall' && node.expression && node.expression.nodeType === 'MemberAccess' &&
+            (node.expression.memberName === 'transfer' || node.expression.memberName === 'transferFrom')) {
+          transfersToken = true;
+        }
+      });
+    });
+    surface.contracts.push({
+      name: suNode.name || 'Contract', contractKind: suNode.contractKind || 'contract',
+      stateVars: stateVars.map(v => v.name + ': ' + v.type), entrypoints, hasPayable, transfersToken
+    });
+    if (hasPayable) addAsset('ETH', 'قرارداد payable — اتر دریافت می‌کند');
+    if (transfersToken) addAsset('ERC-20', 'توکن‌ها با transfer/transferFrom جابه‌جا می‌شوند');
+    if (stateNames.has('owner')) addAsset('Ownership', 'متغیر state با نام owner وجود دارد');
+  });
+  return surface;
+}
+
 export function staticScan(source) {
   const findings = [];
   const clean = stripComments(source);
@@ -840,4 +1116,148 @@ export function reportToMarkdown(report, fileName) {
     lines.push('');
   });
   return lines.join('\n');
+}
+
+// Contest-style report (Code4rena / Sherlock submission format). Each finding
+// gets the standard sections: Summary, Vulnerability Details, Impact, PoC,
+// Recommended Mitigation — ready to paste into the submission form.
+export function reportToContestMd(report, fileName, surface) {
+  const fname = fileName || 'Security.sol';
+  const lines = [];
+  lines.push('# Security Report — ' + fname);
+  lines.push('');
+  lines.push('## Handle');
+  lines.push('');
+  lines.push('## Risk Summary');
+  lines.push('');
+  lines.push('| Severity | Count |');
+  lines.push('|----------|-------|');
+  lines.push('| Critical | ' + report.counts.Critical + ' |');
+  lines.push('| High | ' + report.counts.High + ' |');
+  lines.push('| Medium | ' + report.counts.Medium + ' |');
+  lines.push('| Low | ' + report.counts.Low + ' |');
+  lines.push('| Info | ' + report.counts.Info + ' |');
+  lines.push('');
+  if (surface && surface.contracts && surface.contracts.length) {
+    lines.push('## Attack Surface');
+    lines.push('');
+    if (surface.roles && surface.roles.length) {
+      lines.push('**Roles:** ' + surface.roles.map(r => r.name + ' (' + r.from + ')').join('; '));
+      lines.push('');
+    }
+    if (surface.assets && surface.assets.length) {
+      lines.push('**Assets at risk:** ' + surface.assets.map(a => a.name + ' — ' + a.desc).join('; '));
+      lines.push('');
+    }
+    surface.contracts.forEach(c => {
+      lines.push('### ' + c.name + ' (' + c.contractKind + ')');
+      if (c.stateVars && c.stateVars.length) lines.push('- State: ' + c.stateVars.join(', '));
+      if (c.entrypoints && c.entrypoints.length) {
+        lines.push('- Entrypoints:');
+        c.entrypoints.forEach(e => {
+          lines.push('  - `' + e.name + '(' + (e.args || []).join(', ') + ')` [' + (e.stateMutability || 'nonpayable') + ']' + (e.mods.length ? ' — mods: ' + e.mods.join(', ') : '') + (e.guard ? ' — guard: `' + e.guard + '`' : ''));
+        });
+      }
+      lines.push('');
+    });
+  }
+  lines.push('## Findings');
+  lines.push('');
+  report.findings.forEach((f, i) => {
+    const tag = '[' + f.sev + '-' + (i + 1) + ']';
+    lines.push('### ' + tag + ' ' + f.title);
+    lines.push('');
+    lines.push('**Lines:** ' + fname + (f.line ? ':' + f.line : ''));
+    lines.push('');
+    lines.push('**Summary:** ' + f.detail);
+    lines.push('');
+    lines.push('**Vulnerability Details:** ' + f.detail + (f.kind === 'dynamic' ? ' (تأیید شده با شبیه‌سازی حمله در EVM مرورگر)' : ''));
+    lines.push('');
+    lines.push('**Impact:** ' + (f.sev === 'Critical' || f.sev === 'High'
+      ? 'منجر به از دست رفتن وجوه / ربایش کنترل قرارداد / خسارت اقتصادی قابل‌توجه می‌شود.'
+      : (f.sev === 'Medium' ? 'اثر اقتصادی محدود یا وابسته به شرایط؛ نیازمند تأیید دستی.' : 'یافته اطلاعاتی/جزئی؛ بدون اثر اقتصادی مستقیم.')));
+    if (f.exploit) {
+      lines.push('');
+      lines.push('**Proof of Concept:** ' + f.exploit);
+    }
+    if (f.fix) {
+      lines.push('');
+      lines.push('**Recommended Mitigation:** ' + f.fix);
+    }
+    lines.push('');
+  });
+  lines.push('## Tools Used');
+  lines.push('');
+  lines.push('- Security Lab: static rules + AST expert analyzer + browser-EVM dynamic exploit probes (https://rahmatpourmba-crypto.github.io/smart-contract-editor/)');
+  lines.push('');
+  return lines.join('\n');
+}
+
+// Draft Foundry test that the auditor can complete. Uses forge-std/Test,
+// pranks the attacker/owner and opens a TODO stub per High/Critical finding,
+// plus a reentrancy attack contract when a CEI/reentrancy finding exists.
+export function foundryPoC(report, fileName) {
+  const fname = (fileName || 'Security.sol').replace(/\.sol$/i, '') || 'Security';
+  const l = [];
+  l.push('// Foundry PoC draft — generated by Security Lab');
+  l.push('// Place this file under test/, the target under src/, then run: forge test -vvv');
+  l.push('// SPDX-License-Identifier: UNLICENSED');
+  l.push('pragma solidity ^0.8.19;');
+  l.push('');
+  l.push('import {Test} from "forge-std/Test.sol";');
+  l.push('import {' + fname + '} from "../src/' + fname + '.sol";');
+  l.push('');
+  l.push('// NOTE: rename `' + fname + '` in the import to the real contract name if it differs.');
+  l.push('contract ' + fname + 'Attack is Test {');
+  l.push('    ' + fname + ' target;');
+  l.push('    address attacker = 0x2222222222222222222222222222222222222222;');
+  l.push('    address owner = 0x1111111111111111111111111111111111111111;');
+  l.push('');
+  l.push('    function setUp() public {');
+  l.push('        vm.prank(owner);');
+  l.push('        target = new ' + fname + '();');
+  l.push('        vm.deal(attacker, 1 ether);');
+  l.push('    }');
+  l.push('');
+  const targets = report.findings.filter(f => f.sev === 'Critical' || f.sev === 'High');
+  targets.forEach((f, i) => {
+    l.push('    // [' + f.sev + '-' + (i + 1) + '] ' + f.title);
+    l.push('    // ' + f.detail.replace(/\n/g, ' '));
+    if (f.exploit) l.push('    // PoC hint: ' + f.exploit.replace(/\n/g, ' '));
+    l.push('    function testPoC_' + (i + 1) + '() public {');
+    l.push('        vm.startPrank(attacker);');
+    l.push('        // TODO: complete the attack sequence with real values.');
+    l.push('        // target.<function>(...);');
+    l.push('        vm.stopPrank();');
+    l.push('        // vm.assertEq(target.<stateGetter>(), <expected>, "pwned");');
+    l.push('    }');
+    l.push('');
+  });
+  if (!targets.length) {
+    l.push('    // No High/Critical finding — nothing to exploit in this draft.');
+    l.push('');
+  }
+  l.push('}');
+  const reent = report.findings.find(f => /reentrancy|Reentrancy|ورود مجدد|شکستن CEI|CEI/i.test((f.title || '') + ' ' + (f.detail || '')));
+  if (reent) {
+    l.push('');
+    l.push('contract ReentrancyAttacker {');
+    l.push('    ' + fname + ' target;');
+    l.push('    bool private entered;');
+    l.push('');
+    l.push('    constructor(' + fname + ' _target) { target = _target; }');
+    l.push('');
+    l.push('    function attack() external payable {');
+    l.push('        // target.<vulnerableFunction>(...); // first entry');
+    l.push('    }');
+    l.push('');
+    l.push('    receive() external payable {');
+    l.push('        if (!entered) {');
+    l.push('            entered = true;');
+    l.push('            // target.<vulnerableFunction>(...); // re-enter before state updates');
+    l.push('        }');
+    l.push('    }');
+    l.push('}');
+  }
+  return l.join('\n');
 }

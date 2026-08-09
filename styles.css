@@ -669,3 +669,45 @@ p.muted { color: var(--muted); }
   background: rgba(166, 227, 161, 0.08);
   border-radius: 6px;
 }
+
+.sec-surface {
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-light);
+}
+
+.sec-surface summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent2);
+  user-select: none;
+}
+
+.sec-surface-contract {
+  margin: 0 12px 12px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+}
+
+.sec-surface-row {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.sec-surface-tag {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.sec-surface-eps {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.8;
+}
+

@@ -12,11 +12,25 @@
   const btnUseToken = document.getElementById('sec-use-token');
   const btnRun = document.getElementById('sec-run');
   const btnCopy = document.getElementById('sec-copy');
+  const btnContest = document.getElementById('sec-contest');
+  const btnPoc = document.getElementById('sec-poc');
   const loading = document.getElementById('sec-loading');
   const report = document.getElementById('sec-report');
 
   let lastMarkdown = '';
+  let lastContestMd = '';
+  let lastPoC = '';
   let lastGenerated = null;
+
+  function download(name, text, mime) {
+    const blob = new Blob([text], { type: mime || 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 400);
+  }
 
   const SEV = {
     Critical: { cls: 'sev-critical', label: 'بحرانی' },
@@ -57,8 +71,10 @@
 
     btnRun.disabled = true;
     btnCopy.classList.add('hidden');
+    btnContest.classList.add('hidden');
+    btnPoc.classList.add('hidden');
     report.innerHTML = '';
-    setLoading('⏳ در حال تحلیل امنیتی (کامپایل + اسکن استاتیک + اکسپلویت در EVM مرورگر)...');
+    setLoading('⏳ در حال تحلیل امنیتی (کامپایل + AST + اسکن استاتیک + اکسپلویت در EVM مرورگر)...');
 
     const statics = [];
     try {
@@ -69,13 +85,14 @@
         sources: {},
         settings: {
           optimizer: { enabled: document.getElementById('chk-optimize').checked, runs: 200 },
-          outputSelection: { '*': { '*': ['abi', 'evm.bytecode'] } }
+          outputSelection: { '*': { '': ['ast'], '*': ['abi', 'evm.bytecode'] } }
         }
       };
       input.sources[fileLabel] = { content: src };
 
       let abi = null;
       let bytecode = null;
+      let ast = null;
       let compileErrors = null;
       try {
         const out = JSON.parse(await solc.compile(JSON.stringify(input)));
@@ -87,11 +104,14 @@
           abi = c.abi;
           bytecode = '0x' + c.evm.bytecode.object;
         }
+        ast = (out.sources && out.sources[fileLabel] && out.sources[fileLabel].ast) || null;
       } catch (e) {
         compileErrors = [{ formattedMessage: e.message }];
       }
 
-      const staticFindings = mod.staticScan(src);
+      const astRes = ast ? mod.astAnalyze(ast, src) : { findings: [], contracts: [] };
+      const surface = ast ? mod.attackSurface(ast, src) : null;
+      const staticFindings = mod.staticScan(src).concat(astRes.findings);
       let dynamic = null;
       if (abi && bytecode) {
         dynamic = await mod.runSecurityTests(abi, bytecode, src);
@@ -103,8 +123,10 @@
       if (compileErrors && compileErrors.length) {
         compiled.compileError = compileErrors[0].formattedMessage;
       }
-      render(compiled, mod);
+      render(compiled, mod, surface);
       lastMarkdown = mod.reportToMarkdown(compiled, lastGenerated && lastGenerated.fileName || 'Security.sol');
+      lastContestMd = mod.reportToContestMd(compiled, lastGenerated && lastGenerated.fileName || 'Security.sol', surface);
+      lastPoC = mod.foundryPoC(compiled, lastGenerated && lastGenerated.fileName || 'Security.sol');
       setLoading('');
     } catch (e) {
       setLoading('❌ خطا: ' + e.message);
@@ -113,9 +135,40 @@
     }
   }
 
-  function render(rep, mod) {
+  function render(rep, mod, surface) {
     const html = [];
     const h = (s) => { html.push(s); };
+
+    if (surface && surface.contracts && surface.contracts.length) {
+      h('<details class="sec-surface">');
+      h('<summary>🎯 سطح حمله (Attack Surface) — ' + surface.contracts.length + ' قرارداد</summary>');
+      if (surface.roles && surface.roles.length) {
+        h('<div class="sec-surface-row"><span class="sec-surface-tag">نقش‌ها:</span> ' +
+          surface.roles.map(r => '<code>' + escapeHtml(r.name) + '</code> <span class="muted">(' + escapeHtml(r.from) + ')</span>').join('، ') + '</div>');
+      }
+      if (surface.assets && surface.assets.length) {
+        h('<div class="sec-surface-row"><span class="sec-surface-tag">دارایی‌های در خطر:</span> ' +
+          surface.assets.map(a => '<code>' + escapeHtml(a.name) + '</code> <span class="muted">(' + escapeHtml(a.desc) + ')</span>').join('، ') + '</div>');
+      }
+      surface.contracts.forEach(c => {
+        h('<div class="sec-surface-contract">');
+        h('<b>' + escapeHtml(c.name) + '</b> <span class="muted">(' + escapeHtml(c.contractKind) + ')</span>');
+        if (c.stateVars && c.stateVars.length) h('<div class="sec-surface-row"><span class="sec-surface-tag">state:</span> <code>' + escapeHtml(c.stateVars.join(', ')) + '</code></div>');
+        if (c.entrypoints && c.entrypoints.length) {
+          h('<div class="sec-surface-row"><span class="sec-surface-tag">ورودی‌های عمومی:</span></div>');
+          h('<ul class="sec-surface-eps">');
+          c.entrypoints.forEach(e => {
+            const line = '<code>' + escapeHtml(e.name + '(' + (e.args || []).join(', ') + ')') + '</code> <span class="muted">[' + escapeHtml(e.stateMutability || 'nonpayable') + ']</span>' +
+              (e.mods.length ? ' <span class="muted">mods: ' + escapeHtml(e.mods.join(', ')) + '</span>' : '') +
+              (e.guard ? ' <span class="muted">guard: <code>' + escapeHtml(e.guard) + '</code></span>' : '');
+            h('<li>' + line + '</li>');
+          });
+          h('</ul>');
+        }
+        h('</div>');
+      });
+      h('</details>');
+    }
 
     h('<div class="sec-summary">');
     h('<span class="sec-sum-title">گزارش امنیتی</span>');
@@ -144,11 +197,12 @@
     ['Critical', 'High', 'Medium', 'Low', 'Info'].forEach(sev => {
       (groups[sev] || []).forEach((f, i) => {
         const isDyn = f.kind === 'dynamic';
+        const isAst = f.kind === 'ast';
         h('<div class="sec-finding ' + SEV[sev].cls + '">');
         h('<div class="sec-f-head">');
         h('<span class="sev-badge ' + SEV[sev].cls + '">' + SEV[sev].label + '</span>');
-        h('<span class="sec-f-title">' + (isDyn ? '🧪 ' : '📄 ') + escapeHtml(f.title) + '</span>');
-        h('<span class="sec-f-kind">' + (isDyn ? 'پویا (EVM)' : 'استاتیک' + (f.line ? ' — خط ' + f.line : '')) + '</span>');
+        h('<span class="sec-f-title">' + (isDyn ? '🧪 ' : isAst ? '📐 ' : '📄 ') + escapeHtml(f.title) + '</span>');
+        h('<span class="sec-f-kind">' + (isDyn ? 'پویا (EVM)' : isAst ? 'تحلیلگر AST' + (f.line ? ' — خط ' + f.line : '') : 'استاتیک' + (f.line ? ' — خط ' + f.line : '')) + '</span>');
         h('</div>');
         h('<div class="sec-f-detail">' + escapeHtml(f.detail) + '</div>');
         if (f.exploit) h('<div class="sec-f-exploit">🚨 بهره‌برداری / PoC: ' + escapeHtml(f.exploit) + '</div>');
@@ -161,6 +215,8 @@
 
     report.innerHTML = html.join('');
     btnCopy.classList.remove('hidden');
+    btnContest.classList.remove('hidden');
+    btnPoc.classList.remove('hidden');
   }
 
   btnCopy.addEventListener('click', async () => {
@@ -170,6 +226,18 @@
     } catch (e) {
       setLoading('کپی ناموفق: ' + e.message);
     }
+  });
+
+  btnContest.addEventListener('click', () => {
+    if (!lastContestMd) { setLoading('اول یک تحلیل امنیتی اجرا کن.'); return; }
+    download('security-report-contest.md', lastContestMd, 'text/markdown;charset=utf-8');
+    setLoading('گزارش مسابقه (C4/Sherlock) دانلود شد.');
+  });
+
+  btnPoc.addEventListener('click', () => {
+    if (!lastPoC) { setLoading('اول یک تحلیل امنیتی اجرا کن.'); return; }
+    download('exploit-tests.sol', lastPoC, 'text/plain;charset=utf-8');
+    setLoading('پیش‌نویس PoC فاوندری دانلود شد (برای تکمیل و اجرا: forge test).');
   });
 
   btnRun.addEventListener('click', run);

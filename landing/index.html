@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>توکن‌سازی حرفه‌ای | ساخت توکن ERC-20 اختصاصی</title>
+<style>
+  :root {
+    --bg: #0b1020;
+    --bg2: #111834;
+    --card: #161f3d;
+    --border: #263159;
+    --primary: #7c6cff;
+    --primary2: #4cc9f0;
+    --green: #2dd4a7;
+    --text: #e8ecff;
+    --muted: #9aa5c8;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Vazirmatn", "Segoe UI", Tahoma, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.8;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+  a { color: var(--primary2); text-decoration: none; }
+
+  /* NAV */
+  nav {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(11,16,32,.9); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; }
+  .logo { font-weight: 800; font-size: 20px; color: var(--primary2); }
+  nav ul { display: flex; gap: 26px; list-style: none; }
+  nav a { color: var(--muted); font-size: 15px; }
+  nav a:hover { color: var(--text); }
+  .btn {
+    display: inline-block; background: linear-gradient(135deg, var(--primary), var(--primary2));
+    color: #fff; padding: 12px 28px; border-radius: 12px; font-weight: 700; font-size: 16px;
+    transition: transform .15s; border: none; cursor: pointer;
+  }
+  .btn:hover { transform: translateY(-2px); }
+  .btn-outline { background: transparent; border: 1px solid var(--primary); color: var(--primary2); }
+
+  /* HERO */
+  header { text-align: center; padding: 90px 20px 60px; }
+  .badge {
+    display: inline-block; background: rgba(124,108,255,.15); color: var(--primary2);
+    border: 1px solid var(--primary); border-radius: 999px; padding: 6px 18px; font-size: 13px; margin-bottom: 22px;
+  }
+  header h1 { font-size: 44px; line-height: 1.4; margin-bottom: 18px; }
+  header h1 span { background: linear-gradient(90deg, var(--primary), var(--primary2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  header p { color: var(--muted); font-size: 18px; max-width: 680px; margin: 0 auto 32px; }
+  .cta-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .stats { display: flex; gap: 40px; justify-content: center; margin-top: 50px; flex-wrap: wrap; }
+  .stat b { font-size: 30px; display: block; color: var(--primary2); }
+  .stat span { color: var(--muted); font-size: 14px; }
+
+  /* SECTIONS */
+  section { padding: 70px 20px; }
+  section h2 { text-align: center; font-size: 32px; margin-bottom: 12px; }
+  section .sub { text-align: center; color: var(--muted); margin-bottom: 44px; }
+
+  /* FEATURES */
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 26px; }
+  .card .icon { font-size: 28px; margin-bottom: 12px; }
+  .card h3 { font-size: 18px; margin-bottom: 8px; }
+  .card p { color: var(--muted); font-size: 15px; }
+
+  /* HOW */
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; }
+  .step { text-align: center; padding: 24px; background: var(--bg2); border: 1px solid var(--border); border-radius: 16px; }
+  .step .num { width: 44px; height: 44px; margin: 0 auto 14px; border-radius: 50%; background: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 20px; }
+  .step h4 { margin-bottom: 6px; }
+  .step p { color: var(--muted); font-size: 14px; }
+
+  /* PRICING */
+  .pricing { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; align-items: stretch; }
+  .price-card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 30px; display: flex; flex-direction: column; position: relative; }
+  .price-card.popular { border: 2px solid var(--primary); }
+  .popular-tag { position: absolute; top: -13px; right: 50%; transform: translateX(50%); background: var(--primary); color: #fff; font-size: 12px; padding: 4px 16px; border-radius: 999px; font-weight: 700; }
+  .price-card h3 { font-size: 18px; }
+  .price-card .price { font-size: 32px; font-weight: 800; color: var(--primary2); margin: 14px 0 4px; }
+  .price-card .price small { font-size: 14px; color: var(--muted); font-weight: 400; }
+  .price-card ul { list-style: none; margin: 18px 0 26px; flex: 1; }
+  .price-card li { padding: 7px 0; color: var(--muted); font-size: 15px; }
+  .price-card li::before { content: "✓ "; color: var(--green); font-weight: 700; }
+  .price-card .btn { text-align: center; }
+
+  /* FAQ */
+  .faq-item { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px 24px; margin-bottom: 14px; }
+  .faq-item h4 { font-size: 16px; margin-bottom: 6px; }
+  .faq-item p { color: var(--muted); font-size: 15px; }
+
+  /* CONTACT */
+  #contact { text-align: center; }
+  #contact h2 { margin-bottom: 8px; }
+  #contact .sub { margin-bottom: 28px; }
+  .contact-links { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+  .contact-links .btn { padding: 14px 34px; }
+
+  footer { border-top: 1px solid var(--border); padding: 26px 20px; text-align: center; color: var(--muted); font-size: 14px; }
+
+  @media (max-width: 640px) {
+    header h1 { font-size: 32px; }
+    nav ul { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <div class="logo">⚡ توکن‌ساز</div>
+    <ul>
+      <li><a href="#features">امکانات</a></li>
+      <li><a href="#portfolio">نمونه‌کار</a></li>
+      <li><a href="#how">مراحل</a></li>
+      <li><a href="#pricing">قیمت‌ها</a></li>
+      <li><a href="#faq">سوالات</a></li>
+    </ul>
+    <a href="#contact" class="btn" style="padding:9px 22px">سفارش</a>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap">
+    <span class="badge">کد تست‌شده و استاندارد — بدون وابستگی خارجی</span>
+    <h1>توکن دیجیتال اختصاصی خودت را <span>امروز</span> بساز</h1>
+    <p>توکن ERC-20 استاندارد و امن با اسم، نماد و عرضه دلخواه شما. آماده استقرار روی Ethereum، BNB، Polygon و Tron. کامپایل و تست‌شده با ۱۶ تست خودکار موفق.</p>
+    <div class="cta-row">
+      <a href="#contact" class="btn">شروع کن — مشاوره رایگان</a>
+      <a href="https://rahmatpourmba-crypto.github.io/smart-contract-editor/" target="_blank" class="btn btn-outline">🧪 دموی زندهٔ ابزار</a>
+      <a href="https://github.com/rahmatpourmba-crypto/smart-contract-editor" target="_blank" class="btn btn-outline">مشاهده نمونه کار</a>
+    </div>
+    <div class="stats">
+      <div class="stat"><b>۱۶</b><span>تست خودکار موفق</span></div>
+      <div class="stat"><b>۴+</b><span>شبکه پشتیبانی‌شده</span></div>
+      <div class="stat"><b>۰</b><span>وابستگی خارجی</span></div>
+      <div class="stat"><b>همان روز</b><span>تحویل</span></div>
+    </div>
+  </div>
+</header>
+
+<section id="features">
+  <div class="wrap">
+    <h2>چه امکاناتی می‌گیری؟</h2>
+    <p class="sub">یک توکن کامل با تمام قابلیت‌های یک پروژه حرفه‌ای</p>
+    <div class="grid">
+      <div class="card"><div class="icon">🔄</div><h3>انتقال و تایید</h3><p>Transfer، Approve، TransferFrom و مدیریت کامل Allowance استاندارد ERC-20.</p></div>
+      <div class="card"><div class="icon">🏭</div><h3>Mint (چاپ توکن)</h3><p>مالک می‌تواند توکن جدید ضرب کند — فقط با اجازه شما.</p></div>
+      <div class="card"><div class="icon">🔥</div><h3>Burn (سوزاندن)</h3><p>کاهش عرضه و افزایش ارزش — هر کسی می‌تواند توکن خودش را بسوزاند.</p></div>
+      <div class="card"><div class="icon">🔒</div><h3>قفل سرمایه‌گذار</h3><p>قفل کردن توکن‌های سرمایه‌گذاران تا زمان مشخص + آزادسازی زودهنگام.</p></div>
+      <div class="card"><div class="icon">👑</div><h3>انتقال مالکیت</h3><p>کنترل کامل روی مالکیت قرارداد و توابع مدیریتی.</p></div>
+      <div class="card"><div class="icon">🛡️</div><h3>امن و قابل ممیزی</h3><p>کد ساده و خوانا بدون import خارجی — هر کارشناسی می‌تواند آن را بررسی کند.</p></div>
+      <div class="card"><div class="icon">🧪</div><h3>گزارش امنیتی</h3><p>با ابزار اختصاصی خودم، اسکن استاتیک + شبیه‌سازی حمله در EVM مرورگر انجام می‌شود و گزارش امنیتی همراه کد تحویل می‌گیرید.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="portfolio" style="background: var(--bg2)">
+  <div class="wrap">
+    <h2>نمونه‌کار — ابزارها را همین حالا تست کن</h2>
+    <p class="sub">ابزارهای وب3 که خودم ساختم؛ دمو زنده بدون نصب، مستقیم در مرورگر</p>
+    <div class="grid">
+      <div class="card">
+        <div class="icon">💻</div>
+        <h3>ادیتور + توکن‌ساز</h3>
+        <p>IDE وب Solidity در مرورگر: کامپایلر solc (Web Worker)، مدیریت چند فایل، توکن‌ساز بدون کدنویسی و دانلود فایل `.sol`.</p>
+        <p style="margin-top:12px"><a href="https://rahmatpourmba-crypto.github.io/smart-contract-editor/" target="_blank" class="btn" style="padding:9px 20px;font-size:14px">🧪 دموی زنده</a></p>
+      </div>
+      <div class="card">
+        <div class="icon">🛡️</div>
+        <h3>آزمایشگاه امنیتی</h3>
+        <p>اسکن استاتیک + تحلیل AST + شبیه‌سازی حمله در EVM مرورگر + گزارش مسابقه (C4/Sherlock) و پیش‌نویس PoC فاوندری.</p>
+        <p style="margin-top:12px"><a href="https://rahmatpourmba-crypto.github.io/smart-contract-editor/" target="_blank" class="btn btn-outline" style="padding:9px 20px;font-size:14px">🛡️ تست آنلاین</a></p>
+      </div>
+      <div class="card">
+        <div class="icon">📦</div>
+        <h3>کد منبع (Open Source)</h3>
+        <p>کد کامل پروژه روی گیت‌هاب عمومی است — ببین چه‌طور ساخته شده: ادیتور، توکن‌ساز، موتور امنیتی و قراردادهای تست‌شده.</p>
+        <p style="margin-top:12px"><a href="https://github.com/rahmatpourmba-crypto/smart-contract-editor" target="_blank" class="btn btn-outline" style="padding:9px 20px;font-size:14px">📂 گیت‌هاب</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="how" style="background: var(--bg2)">
+  <div class="wrap">
+    <h2>مراحل کار</h2>
+    <p class="sub">از سفارش تا آنلاین شدن توکن — ۴ قدم ساده</p>
+    <div class="steps">
+      <div class="step"><div class="num">۱</div><h4>گفتگو و مشاوره</h4><p>نیازت را بگو: اسم، نماد، عرضه اولیه و شبکه موردنظر.</p></div>
+      <div class="step"><div class="num">۲</div><h4>ساخت توکن</h4><p>کد اختصاصی و یکتای توکن تو ساخته و کامپایل می‌شود.</p></div>
+      <div class="step"><div class="num">۳</div><h4>تست و تحویل</h4><p>با ۱۶ تست خودکار روی شبیه‌ساز بلاکچین بررسی و تحویل می‌شود.</p></div>
+      <div class="step"><div class="num">۴</div><h4>استقرار</h4><p>توکن روی شبکه موردنظر deploy می‌شود و آدرسش را می‌گیری.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="wrap">
+    <h2>بسته‌ها و قیمت</h2>
+    <p class="sub">برای هر بودجه و نیازی — قیمت‌ها شروع است</p>
+    <div class="pricing">
+      <div class="price-card">
+        <h3>پایه</h3>
+        <div class="price">۵۰$ <small>شروع از</small></div>
+        <ul>
+          <li>کد کامل توکن ERC-20</li>
+          <li>اسم، نماد و عرضه دلخواه</li>
+          <li>راهنمای استقرار</li>
+          <li>پشتیبانی چت</li>
+        </ul>
+        <a href="#contact" class="btn btn-outline">سفارش پایه</a>
+      </div>
+      <div class="price-card popular">
+        <span class="popular-tag">پرطرفدار</span>
+        <h3>کامل</h3>
+        <div class="price">۱۵۰$ <small>شروع از</small></div>
+        <ul>
+          <li>همه‌چیز بسته پایه</li>
+          <li>استقرار روی زنجیره توسط ما</li>
+          <li>تست کامل قبل از استقرار</li>
+          <li>پشتیبانی تا آنلاین شدن</li>
+        </ul>
+        <a href="#contact" class="btn">سفارش کامل</a>
+      </div>
+      <div class="price-card">
+        <h3>سفارشی</h3>
+        <div class="price">توافقی</div>
+        <ul>
+          <li>همه‌چیز بسته کامل</li>
+          <li>قابلیت‌های خاص (مالیات، وایت‌لیست...)</li>
+          <li>پنل مدیریت توکن</li>
+          <li>مشاوره تخصصی</li>
+        </ul>
+        <a href="#contact" class="btn btn-outline">مشاوره بگیر</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq" style="background: var(--bg2)">
+  <div class="wrap">
+    <h2>سوالات پرتکرار</h2>
+    <p class="sub">پاسخ سوالات رایج</p>
+    <div class="faq-item"><h4>توکن من روی کدام شبکه‌ها کار می‌کند؟</h4><p>Ethereum، BNB Smart Chain، Polygon و Tron — بسته به نیاز شما.</p></div>
+    <div class="faq-item"><h4>آیا کد امن است؟</h4><p>بله. کد استاندارد، ساده و بدون وابستگی خارجی است و با ۱۶ تست خودکار روی شبیه‌ساز بلاکچین بررسی شده.</p></div>
+    <div class="faq-item"><h4>چقدر طول می‌کشد؟</h4><p>معمولاً همان روز. ساخت توکن و تحویل کد چند ساعت است؛ استقرار به شبکه بستگی دارد.</p></div>
+    <div class="faq-item"><h4>چطور پرداخت کنم؟</h4><p>USDT/USDC، پرفکت مانی یا کارت به کارت. ۵۰٪ قبل و ۵۰٪ بعد از استقرار موفق.</p></div>
+    <div class="faq-item"><h4>اگر بعداً قابلیت جدید بخواهم چه؟</h4><p>هر توکنی قابل ارتقاست. بسته سفارشی یا پکیج پشتیبانی جداگانه داریم.</p></div>
+  </div>
+</section>
+
+<section id="compare">
+  <div class="wrap">
+    <h2>فرق ما با «ساخت سریع» (فکتوری) چیست؟</h2>
+    <p class="sub">سرویس‌های ارزان ۸ دلاری فقط یک توکن خالی می‌سازند؛ ما مالکیت واقعی را به تو می‌دهیم</p>
+    <div class="pricing">
+      <div class="price-card">
+        <h3>فکتوری ارزان</h3>
+        <div class="price">۸$ <small>هر توکن</small></div>
+        <ul>
+          <li style="opacity:.4">کد قرارداد مال تو نیست</li>
+          <li style="opacity:.4">فقط یک شبکه (Polygon)</li>
+          <li style="opacity:.4">بدون مالیات و ضد نهنگ</li>
+          <li style="opacity:.4">امکان دسترسی ادمین فکتوری به توکن تو</li>
+          <li style="opacity:.4">هیچ پشتیبانی و تماسی</li>
+        </ul>
+      </div>
+      <div class="price-card popular">
+        <span class="popular-tag">انتخاب درست</span>
+        <h3>بسته ما</h3>
+        <div class="price">۵۰$ <small>شروع از</small></div>
+        <ul>
+          <li>فایل کامل قرارداد را می‌گیری</li>
+          <li>روی Ethereum / BNB / Polygon / Tron</li>
+          <li>مالیات، سوزاندن و ضد نهنگ</li>
+          <li>مالکیت کامل فقط با تو</li>
+          <li>پشتیبانی تا آنلاین شدن</li>
+        </ul>
+        <a href="#contact" class="btn">سفارش بده</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="contact">
+  <div class="wrap">
+    <h2>همین حالا شروع کن</h2>
+    <p class="sub">مشاوره اولیه رایگان است — بپرس، جواب بده، توکن‌ت را بساز</p>
+    <div class="contact-links">
+      <a href="https://t.me/Ra63im" target="_blank" class="btn">📩 تلگرام</a>
+      <a href="mailto:rahmatpourmba@gmail.com" class="btn btn-outline">✉️ ایمیل</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    ساخته‌شده با ❤️ — <a href="https://github.com/rahmatpourmba-crypto/smart-contract-editor" target="_blank">مشاهده کد و نمونه کار روی گیت‌هاب</a>
+  </div>
+</footer>
+
+</body>
+</html>

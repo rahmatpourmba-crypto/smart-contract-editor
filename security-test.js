@@ -1118,16 +1118,63 @@ export function reportToMarkdown(report, fileName) {
   return lines.join('\n');
 }
 
+// Shared wording for the contest report — used by the markdown generator and
+// by the UI's live preview so both always stay in sync.
+const CONTEST_TONES = {
+  formal: {
+    intro: (c, a) => (a
+      ? a + ' با ترکیبی از تحلیل دستی، قوانین استاتیک و شبیه‌سازی حمله در EVM مرورگر قرارداد «' + c + '» را بررسی کرده است.'
+      : 'این سند نتیجهٔ بررسی امنیتی قرارداد «' + c + '» است؛ بررسی با ترکیبی از تحلیل دستی، قوانین استاتیک و شبیه‌سازی حمله در EVM مرورگر انجام شده است.'),
+    conclusionLabel: 'نتیجه‌گیری و توصیه‌های کلی',
+    findingIntro: 'یافته‌ها به ترتیب شدت ارائه می‌شوند:'
+  },
+  concise: {
+    intro: (c, a) => 'Audit — ' + c + (a ? ' | بررسی‌کننده: ' + a : '') + ' | روش: Manual + Heuristic Static + EVM Simulation.',
+    conclusionLabel: 'جمع‌بندی',
+    findingIntro: 'یافته‌ها به ترتیب شدت:'
+  },
+  narrative: {
+    intro: (c, a) => (a || 'حسابرس') + ' کد قرارداد «' + c + '» را خط‌به‌خط بررسی کرد تا ببیند مهاجم از کجا می‌تواند وارد شود. آنچه پیدا شد در ادامه آمده است.',
+    conclusionLabel: 'جمع‌بندی نهایی',
+    findingIntro: 'مسیر ورود مهاجم، از خطرناک‌ترین شروع می‌شود:'
+  }
+};
+
+export function contestTone(tone) {
+  return CONTEST_TONES[tone] || CONTEST_TONES.formal;
+}
+
 // Contest-style report (Code4rena / Sherlock submission format). Each finding
 // gets the standard sections: Summary, Vulnerability Details, Impact, PoC,
 // Recommended Mitigation — ready to paste into the submission form.
-export function reportToContestMd(report, fileName, surface) {
-  const fname = fileName || 'Security.sol';
+//
+// Personalization options (`opts`):
+//   contractName     — contract label used in the title
+//   auditorName      — handle / auditor name (fills the Handle section)
+//   tone             — 'formal' | 'concise' | 'narrative' (intro wording)
+//   customNote       — optional note placed right after the intro
+//   signature        — optional footer block at the very end
+//   includeConclusion— if false, the conclusion section is omitted (default true)
+export function reportToContestMd(report, fileName, surface, opts) {
+  const o = opts || {};
+  const fname = o.contractName || fileName || 'Security.sol';
+  const auditor = (o.auditorName || '').trim();
+  const tone = o.tone || 'formal';
+  const includeConclusion = o.includeConclusion !== false;
+  const t = contestTone(tone);
+
   const lines = [];
   lines.push('# Security Report — ' + fname);
   lines.push('');
+  lines.push(t.intro(fname, auditor));
+  if ((o.customNote || '').trim()) {
+    lines.push('');
+    lines.push('> ' + o.customNote.trim().split('\n').join('\n> '));
+  }
+  lines.push('');
   lines.push('## Handle');
   lines.push('');
+  if (auditor) lines.push(auditor);
   lines.push('## Risk Summary');
   lines.push('');
   lines.push('| Severity | Count |');
@@ -1163,6 +1210,8 @@ export function reportToContestMd(report, fileName, surface) {
   }
   lines.push('## Findings');
   lines.push('');
+  lines.push(t.findingIntro);
+  lines.push('');
   report.findings.forEach((f, i) => {
     const tag = '[' + f.sev + '-' + (i + 1) + ']';
     lines.push('### ' + tag + ' ' + f.title);
@@ -1186,10 +1235,19 @@ export function reportToContestMd(report, fileName, surface) {
     }
     lines.push('');
   });
+  if (includeConclusion) {
+    lines.push('## ' + t.conclusionLabel);
+    lines.push('');
+    lines.push('[ریسک کلی قرارداد، نکات باقی‌مانده و اولویت رفع را اینجا بنویس.]');
+    lines.push('');
+  }
   lines.push('## Tools Used');
   lines.push('');
   lines.push('- Security Lab: static rules + AST expert analyzer + browser-EVM dynamic exploit probes (https://rahmatpourmba-crypto.github.io/smart-contract-editor/)');
-  lines.push('');
+  if ((o.signature || '').trim()) {
+    lines.push('');
+    lines.push(o.signature.trim());
+  }
   return lines.join('\n');
 }
 

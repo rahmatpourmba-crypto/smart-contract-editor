@@ -83,13 +83,57 @@
             <button id="sec-use-editor" class="btn-secondary" title="سورس فعلی ادیتور">📄 از ادیتور</button>
             <button id="sec-use-token" class="btn-secondary" title="سورس توکن ساز">🧾 از توکن ساز</button>
             <button id="sec-run" class="btn-primary">🛡️ تحلیل امنیتی</button>
-            <button id="sec-copy" class="btn-secondary hidden">📋 کپی گزارش</button>
             <button id="sec-contest" class="btn-secondary hidden">📄 گزارش مسابقه (C4/Sherlock)</button>
             <button id="sec-poc" class="btn-secondary hidden">🔨 PoC فاوندری</button>
           </div>
           <textarea id="sec-source" class="sec-source" spellcheck="false" placeholder="// سورس Solidity را اینجا بچسبان، یا از دکمه‌های «از ادیتور» / «از توکن ساز» استفاده کن...&#10;// سپس «تحلیل امنیتی» را بزن تا اسکن استاتیک + شبیه‌سازی حمله در EVM مرورگر اجرا شود."></textarea>
+
+          <details class="sec-personalize">
+            <summary>🎨 شخصی‌سازی گزارش (سبک نوشتار، نام آدیتور، امضا)</summary>
+            <div class="sec-pers-grid">
+              <label class="sec-pers-field">نام قرارداد
+                <input id="sec-cname" placeholder="مثلاً SimpleWallet" />
+              </label>
+              <label class="sec-pers-field">نام آدیتور / Handle
+                <input id="sec-auditor" placeholder="مثلاً ra63im" />
+              </label>
+              <label class="sec-pers-field">سبک نوشتار
+                <select id="sec-tone">
+                  <option value="formal" selected>رسمی / آکادمیک</option>
+                  <option value="concise">مختصر / فنی</option>
+                  <option value="narrative">روایت‌محور / داستانی</option>
+                </select>
+              </label>
+              <label class="sec-pers-field sec-pers-wide">یادداشت اختصاصی (اختیاری)
+                <textarea id="sec-note" placeholder="مثلاً: دامنهٔ بررسی، فرضیات، یا نکته‌ای که می‌خواهی ابتدای گزارش بیاید..."></textarea>
+              </label>
+              <label class="sec-pers-field sec-pers-wide">امضا / پاورقی پایان گزارش (اختیاری)
+                <textarea id="sec-sign" placeholder="مثلاً: نام و لینک پروفایل، تشکر، یا شرایط ارجاع..."></textarea>
+              </label>
+              <label class="sec-pers-check">
+                <input type="checkbox" id="sec-conclusion" checked />
+                <span>افزودن بخش «نتیجه‌گیری و توصیه‌ها» در انتهای گزارش</span>
+              </label>
+            </div>
+          </details>
+
           <div id="sec-loading" class="muted"></div>
           <div id="sec-report"></div>
+
+          <div id="sec-report-panel" class="sec-report-panel hidden">
+            <div class="sec-report-head">
+              <div class="sec-tabs">
+                <button class="sec-tab active" data-view="preview">پیش‌نمایش</button>
+                <button class="sec-tab" data-view="markdown">Markdown خام</button>
+              </div>
+              <div class="sec-report-actions">
+                <button id="sec-copy" class="btn-secondary">📋 کپی گزارش</button>
+                <button id="sec-dl" class="btn-primary">⬇️ دانلود .md</button>
+              </div>
+            </div>
+            <div id="sec-report-preview" class="sec-report-preview"></div>
+            <pre id="sec-report-raw" class="sec-report-raw hidden"></pre>
+          </div>
 
           <details class="sec-playbook">
             <summary>🎯 برنامه حمله — چک‌لیست باگ‌یابی مسابقه (کلیک کن)</summary>
@@ -122,6 +166,7 @@
               <li><a href="https://app.hats.finance/audit-competitions" target="_blank" rel="noopener">Hats Finance</a> — رقابت‌های مستمر با جایزه</li>
               <li><a href="https://www.codehawks.com/contests" target="_blank" rel="noopener">CodeHawks (Cyfrin)</a> — مسابقات رسمی + شبکه پیداکنندگان</li>
               <li><a href="https://cantina.xyz/competitions" target="_blank" rel="noopener">Cantina</a> — مسابقات به‌سبک C4/Code4rena</li>
+              <li><a href="https://hackenproof.com/programs" target="_blank" rel="noopener">HackenProof</a> — بستر جایزه‌باز (bug bounty) برای پروژه‌های کریپتو</li>
               <li><a href="https://immunefi.com/explore/" target="_blank" rel="noopener">Immunefi</a> — بزرگ‌ترین پلتفرم باگ‌باونتی (پروتکل‌های DeFi با جایزه‌های چندمیلیون دلاری)</li>
             </ul>
             <div class="sec-contests-tip">

@@ -12,6 +12,20 @@
 
 ---
 
+## 🌐 English Summary
+
+**Web3 Developer — Solidity / EVM / Smart Contract Security (Security First).**
+
+A browser-based Solidity IDE: editor + in-browser `solc` compiler (Web Worker) + multi-file + `localStorage`.
+
+- **No-code Token Factory:** custom ERC-20 contracts (base + premium with tax, anti-whale, maxTx, whitelist, pausable, blacklist) — auto-compile, download `.sol`.
+- **Security Lab:** static rules + AST expert analyzer + dynamic exploit probes in a browser EVM, contest-ready reports (C4/Sherlock style), Foundry PoC drafts, and a bug-hunting playbook.
+- **Ready to sell:** tested sample contracts (`MyToken`, `PremiumToken`) with a sales guide ([SALES.md](SALES.md)).
+
+**Live demo:** [rahmatpourmba-crypto.github.io/smart-contract-editor](https://rahmatpourmba-crypto.github.io/smart-contract-editor/)
+
+---
+
 ## ✨ امکانات
 
 ### 🛡️ آزمایشگاه امنیتی (Security Lab) — ویژهٔ باگ‌یابی و آدیت
@@ -94,17 +108,6 @@ smart-contract-editor/
 - **PremiumToken** (پریمیوم): همهٔ موارد پایه + مالیات، سوزاندن خودکار، ضد نهنگ، سقف تراکنش، مالیات خرید/فروش جدا، وایت‌لیست، Pausable، بلاک‌لیست — رانتایم سبز روی EVM مرورگر
 
 راهنمای کامل فروش و تحویل به مشتری: [SALES.md](SALES.md) | [SALES-KIT.md](SALES-KIT.md) | [DEPLOY-GUIDE.md](DEPLOY-GUIDE.md)
-
----
-
-## 🌐 English Summary
-
-**Web3 Developer — Polygon / EVM Smart Contracts (Security First).**
-
-- Browser-based Solidity IDE: editor, in-browser `solc` compiler (Web Worker), multi-file + `localStorage`.
-- **No-code Token Factory:** generate custom ERC-20 contracts (base + premium with tax, anti-whale, maxTx, whitelist, pausable, blacklist) — auto-compile, download `.sol`.
-- **Security Lab:** static rules + AST expert analyzer + dynamic exploit probes in a browser EVM + contest-ready reports (C4/Sherlock style), Foundry PoC drafts and a bug-hunting playbook.
-- Ready to sell: tested sample contracts (`MyToken`, `PremiumToken`) with a sales guide ([SALES.md](SALES.md)).
 
 ---
 

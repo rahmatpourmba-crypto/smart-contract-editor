@@ -8,7 +8,8 @@
 یک **IDE وب برای Solidity** (شبیه به Remix) که کاملاً در مرورگر اجرا می‌شود: ادیتور + کامپایلر + **توکن‌ساز بدون کدنویسی** + **آزمایشگاه امنیتی (Security Lab)** با اسکن استاتیک، تحلیل AST و شبیه‌سازی حمله در EVM مرورگر — بدون نصب و بدون سرور بک‌اند.
 
 > 🔴 **نسخهٔ زنده (Demo):** [rahmatpourmba-crypto.github.io/smart-contract-editor](https://rahmatpourmba-crypto.github.io/smart-contract-editor/)
-> 🧾 **صفحهٔ فروش / نمونه‌کار:** پوشهٔ [`landing/`](landing/)
+> 🧾 **صفحهٔ فروش / نمونه‌کار (زنده):** [rahmatpourmba-crypto.github.io/smart-contract-landing](https://rahmatpourmba-crypto.github.io/smart-contract-landing/) · [پوشهٔ `landing/`](landing/)
+> 🏆 **راهنمای ورود به مسابقات حسابرسی:** [docs/CONTEST-PLAYBOOK.md](docs/CONTEST-PLAYBOOK.md)
 
 ---
 
